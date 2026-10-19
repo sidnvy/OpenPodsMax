@@ -1,0 +1,1 @@
+package android.media; public class AudioDeviceInfo { public static final int TYPE_BLUETOOTH_A2DP=8, TYPE_BLE_HEADSET=26; private final String address; public AudioDeviceInfo(String a){address=a;} public int getType(){return TYPE_BLUETOOTH_A2DP;} public String getAddress(){return address;} }

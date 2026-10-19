@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <queries><package android:name="com.android.settings" /></queries>
+    <application android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:label="@string/app_name" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:allowBackup="false" android:supportsRtl="true">
+        <!-- Public static artwork only: no device identity, files, or user data. -->
+        <provider android:name=".DeviceArtworkProvider"
+                  android:authorities="${applicationId}.artwork"
+                  android:exported="true" android:grantUriPermissions="false">
+            <grant-uri-permission android:path="/airpods-max.png" />
+        </provider>
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <service android:name=".PlaybackAccessService" android:label="AirPods playback resume"
+                 android:exported="true" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter>
+        </service>
+        <service android:name=".WearPauseService" android:exported="false"
+                 android:foregroundServiceType="connectedDevice" />
+        <service android:name=".NearbyPairingWatchService" android:exported="false"
+                 android:foregroundServiceType="connectedDevice" />
+        <service android:name=".AirPodsSettingsService" android:exported="true"
+                 android:permission="android.permission.BLUETOOTH_PRIVILEGED">
+            <intent-filter><action android:name="dev.airpodsnative.companion.BIND_SETTINGS"/></intent-filter>
+            <intent-filter><action android:name="dev.airpodsnative.companion.BIND_STATE"/></intent-filter>
+        </service>
+    </application>
+</manifest>

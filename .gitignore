@@ -1,0 +1,24 @@
+# Local state and signing material
+.gradle/
+.kotlin/
+**/build/
+local.properties
+.idea/
+*.iml
+state/
+evidence/
+*.apk
+*.aab
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+.env
+.env.*
+*.log
+*.hprof
+__pycache__/
+*.pyc
+# Private artwork must never enter the public tree.
+app/src/debug/res/

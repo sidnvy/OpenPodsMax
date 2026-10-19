@@ -1,0 +1,1 @@
+package android.bluetooth; public final class BluetoothAdapter { public static final BluetoothAdapter INSTANCE=new BluetoothAdapter(); public static BluetoothSocket nextSocket; public static BluetoothAdapter getDefaultAdapter(){return INSTANCE;} public BluetoothDevice getRemoteDevice(String address){return new BluetoothDevice();} }

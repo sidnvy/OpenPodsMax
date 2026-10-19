@@ -1,0 +1,1 @@
+package dev.airpodsnative.companion; import android.content.Context; public final class DeviceIdentityStore { public static boolean trustedAndBonded(Context c,String address){return ConnectionPolicy.DeviceAddress.valid(address);} }

@@ -1,0 +1,1 @@
+package android.bluetooth; public final class BluetoothDevice { public static final int BOND_BONDED=12; public int getBondState(){return BOND_BONDED;} public BluetoothSocket createInsecureL2capSocket(int psm){return BluetoothAdapter.nextSocket;} }

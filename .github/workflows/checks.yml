@@ -1,0 +1,40 @@
+name: Source checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install build requirements
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ripgrep
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
+      - name: Scan credentials with pinned Gitleaks
+        env:
+          GITLEAKS_URL: https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          curl --fail --location "$GITLEAKS_URL" -o "$RUNNER_TEMP/gitleaks.tar.gz"
+          echo "$GITLEAKS_SHA256  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" git . --redact=100 --no-banner
+      - name: Public tree and offline regressions
+        run: |
+          python3 scripts/check_public_tree.py
+          bash tests/run_max2_jvm.sh
+          python3 tests/test_settings_bootstrap_editor.py
+          python3 tests/test_bootstrap_wrapper.py
+          python3 tests/portability_static_contract.py
+      - name: Build without private assets or release credentials
+        run: ./gradlew assembleDebug assembleRelease lintDebug --no-daemon
