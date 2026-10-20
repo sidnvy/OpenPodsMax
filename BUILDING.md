@@ -20,7 +20,7 @@ An existing installation signed with a different key cannot be updated in place.
 
 Dependencies require internet on the first build; subsequent builds can use `--offline` when cached. Gradle distribution/wrapper hashes are pinned against the [official checksum reference](https://gradle.org/release-checksums/).
 
-Public builds use basic vector artwork and a static pairing fallback. Product renders and animations used in private testing are not distributed in this repository.
+Builds include the restored AirPods Max product images and a static pairing fallback. See [artwork sources](docs/ARTWORK.md); these third-party images are separate from the GPL code. The private USDZ-derived animation is not included.
 
 ## Development
 

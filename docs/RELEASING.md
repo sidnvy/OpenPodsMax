@@ -1,6 +1,6 @@
 # Release verification and maintenance
 
-Official APKs are published only on [GitHub Releases](https://github.com/sidnvy/OpenPodsMax/releases). Version 0.2.1 uses application ID `dev.airpodsnative.companion`, version code 4, and a dedicated RSA-4096 release certificate.
+Official APKs are published only on [GitHub Releases](https://github.com/sidnvy/OpenPodsMax/releases). Version 0.2.2 uses application ID `dev.airpodsnative.companion`, version code 5, and a dedicated RSA-4096 release certificate.
 
 ## Verify a download
 
@@ -8,7 +8,7 @@ Download the APK and `SHA256SUMS` from the same release, then run:
 
 ```sh
 sha256sum --check SHA256SUMS
-apksigner verify --verbose --print-certs OpenPodsMax-0.2.1.apk
+apksigner verify --verbose --print-certs OpenPodsMax-0.2.2.apk
 ```
 
 The release certificate SHA-256 fingerprint is:

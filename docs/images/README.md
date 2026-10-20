@@ -10,6 +10,6 @@ The public-tree guard pins this reviewed image by SHA-256. App source and the do
 
 `pixel-system-controls.png` is the original, unedited Pixel device-details capture from the earlier private integration acceptance session, after metadata registration was restored. It shows the actual Android Settings page, not a mockup or app-rendered replacement. The owner-provided headset display name is visible; no device address, serial number, account email or notification contents are shown.
 
-This historical capture includes the small product icon used by that private test build. It is included only to document the system interface; the product artwork is not supplied as an app resource in public builds. Android UI and product imagery remain their respective owners' material and are not relicensed as original GPL artwork. The current release uses basic vector artwork.
+This historical capture includes the small product icon used by that private test build. It is included only to document the system interface; the product artwork was not supplied in releases before 0.2.2. Android UI and product imagery remain their respective owners' material and are not relicensed as original GPL artwork. Version 0.2.2 restores the product images used by these earlier captures; see ../ARTWORK.md.
 
 On the later screenshot visit, the system entry had reverted to Android's default controls, illustrating the documented registration-persistence limitation. This image shows the registered result, not the phone's current state.

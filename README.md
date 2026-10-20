@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/sidnvy/OpenPodsMax/releases/latest">Download APK</a> ·
-  <a href="https://github.com/sidnvy/OpenPodsMax/releases/tag/v0.2.1">Release notes</a> ·
+  <a href="https://github.com/sidnvy/OpenPodsMax/releases/tag/v0.2.2">Release notes</a> ·
   <a href="https://github.com/sidnvy/OpenPodsMax/issues">Feedback</a>
 </p>
 
@@ -22,7 +22,7 @@ Bring AirPods Max 2 controls into Android’s **Connected devices**, alongside a
 
 <p align="center"><em>Android device details after registration (left) · Dedicated settings (right)</em></p>
 
-Real Pixel 10 Pro XL captures from the private test build. **System integration is experimental:** it requires separate ADB registration and can reset after Bluetooth cycles or system updates. Installing the APK alone enables the dedicated app. [Screenshot details](docs/images/README.md).
+Real Pixel 10 Pro XL captures from the earlier test build. Version 0.2.2 restores its product imagery. **System integration is experimental:** it requires separate ADB registration and can reset after Bluetooth cycles or system updates. Installing the APK alone enables the dedicated app. [Screenshot details](docs/images/README.md).
 
 ## Features
 

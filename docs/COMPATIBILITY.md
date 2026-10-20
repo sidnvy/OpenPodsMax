@@ -15,7 +15,7 @@ Simultaneous multipoint and Apple-style automatic switching are not implemented.
 
 ## Installing over an existing version
 
-Official 0.2.0 installations can update directly to 0.2.1 with the same release signing key. Private/debug builds use a different certificate and require uninstalling first, resetting app data and permissions. See [release verification](RELEASING.md).
+Official 0.2.0 and 0.2.1 installations can update directly to 0.2.2 with the same release signing key. Private/debug builds use a different certificate and require uninstalling first, resetting app data and permissions. See [release verification](RELEASING.md).
 
 ## Permissions and privacy
 

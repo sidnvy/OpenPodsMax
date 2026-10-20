@@ -31,7 +31,7 @@ public final class DeviceArtworkProvider extends ContentProvider {
         String bond = prefs.getString("bond_address", null);
         AirPodsFinish finish = AirPodsFinish.Companion.fromSaved(
                 bond == null ? null : prefs.getString("color." + bond, null));
-        artwork = new File(getContext().getCacheDir(), "system-airpods-max-v3-" + finish.name() + ".png");
+        artwork = new File(getContext().getCacheDir(), "system-airpods-max-v4-" + finish.name() + ".png");
         if (artwork.isFile() && artwork.length() > 0) return;
         File temporary = null;
         Bitmap bitmap = null;
