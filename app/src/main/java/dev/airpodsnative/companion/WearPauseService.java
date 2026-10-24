@@ -35,7 +35,10 @@ public final class WearPauseService extends Service {
         long delay=policy.delay(SystemClock.elapsedRealtime());
         if(delay>=0)handler.postDelayed(check,delay);
     });
-    private final AapController.SessionListener session=connected->handler.post(this::reset);
+    private final AapController.SessionListener session=connected->handler.post(()->{
+        Log.i(AapController.TAG,connected?"WEAR_AAP_SESSION_CONNECTED":"WEAR_AAP_SESSION_DISCONNECTED");
+        reset();
+    });
     private SharedPreferences prefs(){return getSharedPreferences("selected_airpods",MODE_PRIVATE);}
     private void reset(){handler.removeCallbacks(check);handler.removeCallbacks(resumeCheck);policy.reset();if(resume!=null)resume.clear();generation=-1;}
     private final Runnable resumeCheck=new Runnable(){public void run(){
@@ -60,7 +63,7 @@ public final class WearPauseService extends Service {
         if(!prefs().getBoolean(PREF,false) || !DeviceIdentityStore.trustedAndBonded(this,selected)){
             stopSelf();return START_NOT_STICKY;
         }
-        if(active && selected.equalsIgnoreCase(target))return START_NOT_STICKY;
+        if(active && selected.equalsIgnoreCase(target))return START_STICKY;
         reset();target=selected;
         PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE);
         PendingIntent stop=PendingIntent.getService(this,1,new Intent(this,WearPauseService.class).setAction(STOP),PendingIntent.FLAG_IMMUTABLE);
@@ -76,9 +79,13 @@ public final class WearPauseService extends Service {
             controller.connectReadOnlyAsync(target);
             Log.i(AapController.TAG,"WEAR_PAUSE_SERVICE_ACTIVE");
         }catch(RuntimeException ex){
-            prefs().edit().putBoolean(PREF,false).apply();Log.w(AapController.TAG,"WEAR_PAUSE_START_FAILED="+ex.getClass().getSimpleName());stopSelf();
+            // Transient Android service-start failures are not user opt-out.
+            Log.w(AapController.TAG,"WEAR_PAUSE_START_FAILED="+ex.getClass().getSimpleName());stopSelf();
+            return START_NOT_STICKY;
         }
-        return START_NOT_STICKY;
+        // Allow a system-reclaimed service to rebuild its AAP subscriptions.
+        // Explicit STOP and invalid configuration remain non-sticky.
+        return START_STICKY;
     }
     public static boolean mediaRouteMatches(AudioManager audio,String address){
         if(Build.VERSION.SDK_INT<33 || audio==null || address==null)return false;
@@ -92,10 +99,18 @@ public final class WearPauseService extends Service {
     private void pauseIfDue(){
         if(!active || !policy.consume(SystemClock.elapsedRealtime()))return;
         try {
-            boolean eligible=WearPausePolicy.eligible(prefs().getBoolean(PREF,false),controller.isCurrentSession(target,generation),
-                DeviceIdentityStore.trustedAndBonded(this,target),mediaRouteMatches(audio,target),
-                audio.getMode()==AudioManager.MODE_NORMAL,audio.isMusicActive());
-            if(!eligible){Log.i(AapController.TAG,"WEAR_PAUSE_SKIPPED_PRECONDITION");return;}
+            boolean enabled=prefs().getBoolean(PREF,false);
+            boolean sessionCurrent=controller.isCurrentSession(target,generation);
+            boolean trusted=DeviceIdentityStore.trustedAndBonded(this,target);
+            boolean route=mediaRouteMatches(audio,target);
+            boolean normal=audio.getMode()==AudioManager.MODE_NORMAL;
+            boolean playing=audio.isMusicActive();
+            if(!WearPausePolicy.eligible(enabled,sessionCurrent,trusted,route,normal,playing)){
+                Log.i(AapController.TAG,"WEAR_PAUSE_SKIPPED_PRECONDITION enabled="+enabled+
+                    " session="+sessionCurrent+" trusted="+trusted+" route="+route+
+                    " normal="+normal+" playing="+playing);
+                return;
+            }
             resume.clear();
             boolean targeted=false;
             try {targeted=prefs().getBoolean(WearResumeController.PREF,false) && resume.pause();}
