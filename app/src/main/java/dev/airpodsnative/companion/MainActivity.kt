@@ -546,10 +546,10 @@ private fun Overview(
     Group {
         IosSwitchRow("Pause when removed", "Pauses music on this phone.",
             pauseWhenRemoved, !preview && d.connected && Build.VERSION.SDK_INT >= 33,
-            onPauseWhenRemoved)
+            onCheckedChange = onPauseWhenRemoved)
         Separator()
         IosSwitchRow("Resume when worn", "Resumes the same player within 60 seconds. Requires notification access; enable this switch after granting access.",
-            resumeWhenWorn, !preview && pauseWhenRemoved, onResumeWhenWorn)
+            resumeWhenWorn, !preview && pauseWhenRemoved, onCheckedChange = onResumeWhenWorn)
     }
     SectionCaption("ENVIRONMENT")
     Group {
@@ -720,7 +720,8 @@ private fun Overview(
     SectionCaption("HEADPHONE BEHAVIOR")
     Group {
         IosSwitchRow("Automatic Head Detection", "Automatically pause when removed",
-            asBool(d, AapController.EAR_DETECTION), d.connected && !preview, onHeadDetection)
+            asBool(d, AapController.EAR_DETECTION), d.connected && !preview,
+            onCheckedChange = onHeadDetection)
     }
 }
 
