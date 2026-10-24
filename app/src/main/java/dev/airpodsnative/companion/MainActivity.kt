@@ -64,7 +64,7 @@ class MainActivity : ComponentActivity() {
         setContent { AirPodsApp(preview, pairingPreview, pairFromNotification, overlayPreview) }
     }
 }
-private enum class Screen { OVERVIEW, CONTROLS, ADAPTIVE, ACCESSIBILITY, ABOUT }
+private enum class Screen { OVERVIEW, ADAPTIVE, ACCESSIBILITY, ABOUT }
 private data class BondOption(val address: String, val label: String)
 private data class DeviceState(
     val connected: Boolean, val battery: Int, val mode: Int,
@@ -422,8 +422,6 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
                                     if (!sent) snackbar.showSnackbar("Headset is applying a setting. Please retry.")
                                 }
                             })
-                        Screen.CONTROLS -> Controls(device, preview,
-                            onCycle = { mask -> if (!preview && controller.isConnected) controller.sendSetting(AapController.LISTENING_MODE_CYCLE, mask) })
                         Screen.ADAPTIVE -> AdaptivePage(device, preview,
                             onAdjust = { level -> !preview && controller.isConnected && controller.sendAdaptiveNoiseStrength(level) })
                         Screen.ACCESSIBILITY -> AccessibilityPage(device, preview,
@@ -471,7 +469,6 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
     val p = LocalApplePalette.current
     val name = when (page) {
         Screen.OVERVIEW -> "AirPods Max 2"
-        Screen.CONTROLS -> "Controls & Gestures"
         Screen.ADAPTIVE -> "Customize Adaptive Audio"
         Screen.ACCESSIBILITY -> "Accessibility"
         Screen.ABOUT -> "About your AirPods"
@@ -485,12 +482,6 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
 }
 
 private fun asBool(d: DeviceState, id: Int): Boolean? = when (d.settings[id]) { 1 -> true; 2 -> false; else -> null }
-
-private data class CycleOption(val name: String, val mask: Int)
-private val cycles = listOf(
-    CycleOption("Off", 1), CycleOption("Transparency", 4),
-    CycleOption("Adaptive", 8), CycleOption("Noise Cancellation", 2)
-)
 
 @Composable
 private fun Overview(
@@ -518,12 +509,6 @@ private fun Overview(
     }
     SectionCaption("LISTENING MODE")
     AppleListeningStrip(d.mode, enabled = d.connected, pendingMode = pending, onClickMode = onMode)
-    SectionCaption("BUTTON CYCLES BETWEEN")
-    CycleSummary(d)
-    SectionCaption("CONTROLS")
-    Group {
-        NavRow("Digital Crown", "Increase Volume: awaiting protocol verification") { onScreen(Screen.CONTROLS) }
-    }
     SectionCaption("AUDIO")
     Group {
         IosSwitchRow("Personalized Volume", "Automatically adjusts volume",
@@ -568,67 +553,6 @@ private fun Overview(
         Separator()
         NavRow("About your AirPods", "Model and firmware information") { onScreen(Screen.ABOUT) }
     }
-}
-
-@Composable private fun CycleSummary(d: DeviceState) {
-    val p = LocalApplePalette.current
-    val mask = d.settings[AapController.LISTENING_MODE_CYCLE]
-    Group {
-        cycles.forEachIndexed { idx, item ->
-            ChoiceRow(item.name, mask != null && mask and item.mask != 0, enabled = false) {}
-            if (idx < cycles.lastIndex) Separator()
-        }
-    }
-    Text(if (mask == null) "Button cycle choices have not been reported by the headset."
-        else "Press the listening mode button to cycle through selected modes.",
-        fontSize = 11.sp, color = p.secondary, modifier = Modifier.padding(top = 6.dp))
-}
-
-@Composable private fun Controls(d: DeviceState, preview: Boolean, onCycle: (Int) -> Unit) {
-    val p = LocalApplePalette.current
-    Group {
-        val crownArt = if (androidx.compose.foundation.isSystemInDarkTheme())
-            R.drawable.airpods_crown_detail_dark else R.drawable.airpods_crown_detail
-        Image(painterResource(crownArt), contentDescription = "Digital Crown close-up",
-            modifier = Modifier.fillMaxWidth().height(190.dp).clip(RoundedCornerShape(15.dp)),
-            contentScale = ContentScale.Fit)
-        Text("Digital Crown · Listening Mode button", color = p.secondary, fontSize = 11.sp,
-            modifier = Modifier.padding(start = 16.dp, bottom = 10.dp))
-    }
-    SectionCaption("DIGITAL CROWN")
-    Text("Increase Volume by Rotating Digital Crown", color = p.secondary, fontSize = 12.sp)
-    Group {
-        ChoiceRow("Back to Front", selected = false, enabled = false) {}
-        Separator()
-        ChoiceRow("Front to Back", selected = false, enabled = false) {}
-    }
-    Text("Rotation-direction control not yet verified by the AAP backend.",
-        color = p.secondary, fontSize = 11.sp, modifier = Modifier.padding(top = 7.dp))
-    SectionCaption("BUTTON CYCLES BETWEEN")
-    val mask = d.settings[AapController.LISTENING_MODE_CYCLE]
-    Group {
-        cycles.forEachIndexed { idx, option ->
-            ChoiceRow(option.name, mask != null && mask and option.mask != 0,
-                enabled = !preview && d.connected && mask != null &&
-                    AapController.LISTENING_MODE_CYCLE !in d.verifying) {
-                if (mask != null) {
-                    val updated = mask xor option.mask
-                    if (Integer.bitCount(updated) >= 2) onCycle(updated)
-                }
-            }
-            if (idx < cycles.lastIndex) Separator()
-        }
-    }
-    if (mask == null) Text("The headset has not reported a listening-button configuration.",
-        color = p.secondary, fontSize = 11.sp)
-    SectionCaption("CALL CONTROLS")
-    Group {
-        NavRow("Mute & Unmute", "Requires protocol verification", enabled = false) {}
-        Separator()
-        NavRow("End Call", "Requires protocol verification", enabled = false) {}
-    }
-    SectionCaption("CAMERA REMOTE")
-    Group { NavRow("Camera Control", "Apple ecosystem feature · unavailable", enabled = false) {} }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
