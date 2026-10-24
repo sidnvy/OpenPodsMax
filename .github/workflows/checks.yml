@@ -38,3 +38,11 @@ jobs:
           python3 tests/portability_static_contract.py
       - name: Build without private assets or release credentials
         run: ./gradlew assembleDebug assembleRelease lintDebug --no-daemon
+      - name: Upload unsigned Moto regression APK
+        if: github.ref == 'refs/heads/fix/moto-wear-background-reliability'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: moto-wear-regression-unsigned
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          retention-days: 3
+          if-no-files-found: error

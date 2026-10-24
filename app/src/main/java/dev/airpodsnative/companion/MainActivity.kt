@@ -108,7 +108,10 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
     LaunchedEffect(pauseWhenRemoved, selected, permission, preview) {
         if (!preview && pauseWhenRemoved && permission && DeviceIdentityStore.trustedAndBonded(context, selected)) {
             try { context.startForegroundService(Intent(context, WearPauseService::class.java)) }
-            catch (_: RuntimeException) { prefs.edit().putBoolean(WearPauseService.PREF, false).apply() }
+            catch (e: RuntimeException) {
+                // A transient foreground-service restriction must not erase user intent.
+                android.util.Log.w(AapController.TAG, "WEAR_PAUSE_LAUNCH_FAILED=" + e.javaClass.simpleName)
+            }
         } else if (!preview) context.stopService(Intent(context, WearPauseService::class.java))
     }
     var nearbyWatchRequested by remember { mutableStateOf(prefs.getBoolean("nearby_watcher_requested", false)) }
