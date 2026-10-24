@@ -34,3 +34,12 @@ Suggested log filter: adb -s DEVICE_SERIAL logcat -v time -s AirPodsAAP:I '*:S'
 - CI outputs only an unsigned APK on this branch; sign locally on trusted Workstation after verifying release signing certificate fingerprint.
 - Reinstall using adb install -r, retaining data and verified package/signature. Restore original same-version signed APK for rollback.
 - Do not uninstall or clear app data to bypass a signature mismatch.
+
+## 2026-10-24 Moto follow-up: PASS (service recovery)
+
+- GitHub Actions run 40054657476: full source checks, Android build, artifact upload all passed.
+- The CI unsigned v0.2.2 APK was signed locally with the existing OpenPodsMax release certificate. The certificate fingerprint exactly matched the previously installed Moto APK.
+- `adb install -r` succeeded without removing the package or clearing app data; the app's existing battery exemption remained.
+- After opening the app once, the service was foreground, `stopIfKilled=false`, and AAP had a live socket and wear-state reports.
+- With the app returned to Home, `am crash` terminated the process. Within six seconds Android relaunched the process, the sticky foreground service was active again, `SOCKET_CONNECTED` and `WEAR_AAP_SESSION_CONNECTED` were logged, and subsequent wear-state events were observed. No manual app relaunch was necessary.
+- This is a confirmed **PASS** for process-reclaim recovery on Moto Edge 70 / Android 17; physical removal/reinsertion media pause-and-resume remains separately **NOT TESTED**. Do not interpret this as all end-to-end acceptance gates passing.
