@@ -37,7 +37,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.airpodsnative.companion.ui.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Figma v3 personal-use UI. Production state is always read from the AAP device.
  * Debug-only design_preview renders static sample data without opening Bluetooth.
@@ -86,6 +89,7 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
                        pairFromNotification: MutableState<Boolean>, overlayPreview: Boolean) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val controller = remember { AapController.instance().also { it.initialize(context) } }
+    val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("selected_airpods", 0) }
     var permission by remember { mutableStateOf(preview || context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) }
     val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { permission = it }
@@ -270,15 +274,23 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
     LaunchedEffect(preview, selected, bonds) {
         if (preview) return@LaunchedEffect
         while (true) {
-            observed = DeviceState(
-                controller.isConnected, controller.batteryPercent(), controller.lastObservedMode(),
-                controller.snapshot(), bonds.firstOrNull { it.address == selected }?.label ?: "AirPods Max 2",
-                setOf(AapController.CONVERSATION_AWARENESS,AapController.PERSONALIZED_VOLUME,
-                    AapController.EAR_DETECTION,AapController.ALLOW_OFF,
-                    AapController.ADAPTIVE_NOISE,AapController.LISTENING_MODE_CYCLE,
-                    AapController.PRESS_SPEED,AapController.HOLD_DURATION,AapController.CHIME_VOLUME)
-                    .filter { controller.isVerifyingSetting(it) }.toSet()
-            )
+            val verifying = setOf(AapController.CONVERSATION_AWARENESS,AapController.PERSONALIZED_VOLUME,
+                AapController.EAR_DETECTION,AapController.ALLOW_OFF,
+                AapController.ADAPTIVE_NOISE,AapController.LISTENING_MODE_CYCLE,
+                AapController.PRESS_SPEED,AapController.HOLD_DURATION,AapController.CHIME_VOLUME)
+                .filter { controller.isVerifyingSetting(it) }.toSet()
+            // A setting write deliberately reconnects just the AAP control channel.
+            // Keep the last *confirmed* values on screen for that bounded, audio-route-
+            // verified transition. Do not misrepresent a real disconnect as temporary.
+            observed = if (observed.connected && controller.isSettingsReadbackRefreshing()) {
+                observed.copy(verifying = verifying)
+            } else {
+                DeviceState(
+                    controller.isConnected, controller.batteryPercent(), controller.lastObservedMode(),
+                    controller.snapshot(), bonds.firstOrNull { it.address == selected }?.label ?: "AirPods Max 2",
+                    verifying
+                )
+            }
             delay(450)
         }
     }
@@ -403,7 +415,13 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
                             },
                             pauseWhenRemoved = pauseWhenRemoved,
                             onPauseWhenRemoved = { prefs.edit().putBoolean(WearPauseService.PREF, it).apply() },
-                            onBoolean = { id, value -> if (!preview && controller.isConnected) controller.sendBoolean(id, value) })
+                            onBoolean = { id, value ->
+                                if (!preview) scope.launch {
+                                    // A synchronous L2CAP write must never block Compose input.
+                                    val sent = withContext(Dispatchers.IO) { controller.sendBoolean(id, value) }
+                                    if (!sent) snackbar.showSnackbar("Headset is applying a setting. Please retry.")
+                                }
+                            })
                         Screen.CONTROLS -> Controls(device, preview,
                             onCycle = { mask -> if (!preview && controller.isConnected) controller.sendSetting(AapController.LISTENING_MODE_CYCLE, mask) })
                         Screen.ADAPTIVE -> AdaptivePage(device, preview,
@@ -510,13 +528,15 @@ private fun Overview(
     Group {
         IosSwitchRow("Personalized Volume", "Automatically adjusts volume",
             asBool(d, AapController.PERSONALIZED_VOLUME),
-            d.connected && AapController.PERSONALIZED_VOLUME !in d.verifying) {
+            d.connected && AapController.PERSONALIZED_VOLUME !in d.verifying,
+            pending = AapController.PERSONALIZED_VOLUME in d.verifying) {
             onBoolean(AapController.PERSONALIZED_VOLUME, it)
         }
         Separator()
         IosSwitchRow("Conversation Awareness", "Lowers media volume when you speak",
             asBool(d, AapController.CONVERSATION_AWARENESS),
-            d.connected && AapController.CONVERSATION_AWARENESS !in d.verifying) {
+            d.connected && AapController.CONVERSATION_AWARENESS !in d.verifying,
+            pending = AapController.CONVERSATION_AWARENESS in d.verifying) {
             onBoolean(AapController.CONVERSATION_AWARENESS, it)
         }
     }
@@ -526,10 +546,10 @@ private fun Overview(
     Group {
         IosSwitchRow("Pause when removed", "Pauses music on this phone.",
             pauseWhenRemoved, !preview && d.connected && Build.VERSION.SDK_INT >= 33,
-            onPauseWhenRemoved)
+            onCheckedChange = onPauseWhenRemoved)
         Separator()
         IosSwitchRow("Resume when worn", "Resumes the same player within 60 seconds. Requires notification access; enable this switch after granting access.",
-            resumeWhenWorn, !preview && pauseWhenRemoved, onResumeWhenWorn)
+            resumeWhenWorn, !preview && pauseWhenRemoved, onCheckedChange = onResumeWhenWorn)
     }
     SectionCaption("ENVIRONMENT")
     Group {
@@ -537,7 +557,8 @@ private fun Overview(
         Separator()
         IosSwitchRow("Automatic Head Detection", "Pause when removed",
             asBool(d, AapController.EAR_DETECTION),
-            d.connected && AapController.EAR_DETECTION !in d.verifying) {
+            d.connected && AapController.EAR_DETECTION !in d.verifying,
+            pending = AapController.EAR_DETECTION in d.verifying) {
             onBoolean(AapController.EAR_DETECTION, it)
         }
     }
@@ -699,7 +720,8 @@ private fun Overview(
     SectionCaption("HEADPHONE BEHAVIOR")
     Group {
         IosSwitchRow("Automatic Head Detection", "Automatically pause when removed",
-            asBool(d, AapController.EAR_DETECTION), d.connected && !preview, onHeadDetection)
+            asBool(d, AapController.EAR_DETECTION), d.connected && !preview,
+            onCheckedChange = onHeadDetection)
     }
 }
 

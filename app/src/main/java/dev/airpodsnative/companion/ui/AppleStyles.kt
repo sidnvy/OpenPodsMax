@@ -105,6 +105,7 @@ fun NavRow(title: String, detail: String = "", enabled: Boolean = true, onClick:
 fun IosSwitchRow(
     title: String, detail: String,
     checked: Boolean?, enabled: Boolean,
+    pending: Boolean = false,
     onCheckedChange: (Boolean) -> Unit
 ) {
     val p = LocalApplePalette.current
@@ -115,7 +116,8 @@ fun IosSwitchRow(
         Column(Modifier.weight(1f)) {
             Text(title, color = p.primary, fontSize = 13.5.sp, fontWeight = FontWeight.Medium)
             Text(
-                if (checked == null) "Not reported by headphones" else detail,
+                if (checked == null) "Not reported by headphones"
+                else if (pending) "Checking headset…" else detail,
                 color = p.secondary, fontSize = 11.sp, lineHeight = 14.sp
             )
         }

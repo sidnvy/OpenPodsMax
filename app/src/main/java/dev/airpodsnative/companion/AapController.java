@@ -144,12 +144,30 @@ public final class AapController {
         final int settingId, expected, original;
         final long generation;
         volatile boolean reconnectRequested;
+        volatile long reconnectStartedAtMs;
         PendingSetting(int id,int expected,int original,long generation){
             this.settingId=id;this.expected=expected;this.original=original;this.generation=generation;
         }
     }
     private final Map<Integer,PendingSetting> awaitingReadback=new ConcurrentHashMap<>();
     public boolean isVerifyingSetting(int controlId){return awaitingReadback.containsKey(controlId);}
+    /**
+     * Presentation-only continuity for a planned, same-bond AAP readback reconnect.
+     * This never claims that the control channel is connected, and never grants
+     * permission to send commands. An actual audio-route loss fails closed.
+     */
+    public boolean isSettingsReadbackRefreshing(){
+        String address=policy.target();
+        if(address==null || !hasAudioConnection(address))return false;
+        long now=TimeUnit.NANOSECONDS.toMillis(System.nanoTime());
+        for(PendingSetting receipt:awaitingReadback.values()){
+            long elapsed=now-receipt.reconnectStartedAtMs;
+            if(receipt.reconnectRequested && receipt.reconnectStartedAtMs>0
+                && elapsed>=0 && elapsed<=3000
+                && policy.current(receipt.generation,address))return true;
+        }
+        return false;
+    }
 
     private final CopyOnWriteArrayList<FeatureListener> featureListeners=new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<SessionListener> sessionListeners=new CopyOnWriteArrayList<>();
@@ -499,6 +517,7 @@ public final class AapController {
     private synchronized void requestSettingReadback(PendingSetting receipt){
         if(awaitingReadback.get(receipt.settingId)!=receipt ||
             receipt.generation!=policy.generation())return;
+        receipt.reconnectStartedAtMs=TimeUnit.NANOSECONDS.toMillis(System.nanoTime());
         receipt.reconnectRequested=true;
         BluetoothSocket toClose=socket;
         if(toClose==null){
