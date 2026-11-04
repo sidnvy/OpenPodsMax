@@ -28,16 +28,23 @@ public final class WearPauseDebounceTest {
         h.callback(1501);
         check(h.pauses==1 && h.scheduled.size()==1,"duplicate callback cannot pause or reschedule again");
 
-        for(int cancellation=0;cancellation<4;cancellation++){
+        for(int cancellation=0;cancellation<3;cancellation++){
             Harness cancelled=new Harness();cancelled.remove();cancelled.callback(1499);
             if(cancellation==0)cancelled.policy.observe(0,0,1499);
-            if(cancellation==1)cancelled.policy.observe(0,1,1499);
-            if(cancellation==2)cancelled.policy.observe(3,3,1499);
-            if(cancellation==3)cancelled.policy.reset();
+            if(cancellation==1)cancelled.policy.observe(3,3,1499);
+            if(cancellation==2)cancelled.policy.reset();
             cancelled.callback(1500);cancelled.callback(1600);
-            check(cancelled.pauses==0,"cancelled/partial/unknown/reset removal must not pause: "+cancellation);
+            check(cancelled.pauses==0,"full reinsertion/unknown/reset removal must not pause: "+cancellation);
             check(cancelled.scheduled.equals(List.of(1L)),"cancelled deadline must not keep rescheduling: "+cancellation);
         }
+        Harness partial=new Harness();partial.remove();partial.callback(1499);
+        partial.policy.observe(0,1,1499);partial.callback(1500);
+        check(partial.pauses==1 && partial.scheduled.equals(List.of(1L)),
+            "one remaining off cup must retain the original retry deadline");
+        Harness recorded=new Harness();recorded.policy.observe(0,0,0);recorded.policy.observe(0,1,16485);
+        recorded.callback(16984);recorded.callback(16985);
+        check(recorded.pauses==1 && recorded.scheduled.equals(List.of(1L)),
+            "recorded asymmetric removal must pause after its early callback is retried");
         Harness stopped=new Harness();stopped.remove();stopped.active=false;stopped.callback(1499);stopped.callback(1500);
         check(stopped.pauses==0 && stopped.scheduled.isEmpty(),"inactive service must neither consume nor reschedule");
         Harness initial=new Harness();initial.policy.observe(1,1,1000);initial.callback(1500);

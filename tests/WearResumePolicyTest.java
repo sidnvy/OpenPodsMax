@@ -15,6 +15,12 @@ public final class WearResumePolicyTest {
         p.arm(5000);p.update(5100,true,true,false,5100);p.wear(0,0,5200);p.wear(1,0,5300);
         check(!p.consume(6000),"partial wear cancels debounce");
         p.wear(0,0,6000);p.wear(0,0,6200);check(p.consume(6500),"duplicates do not postpone");
+        for(int[] partial:new int[][]{{1,0},{0,1},{1,1}}){
+            p.arm(7000);p.update(7100,true,true,false,7100);p.wear(partial[0],partial[1],7200);
+            check(!p.consume(7800),"resume never starts while either cup remains removed");
+            p.wear(0,0,8000);check(!p.consume(8499),"both-worn resume retains its full debounce");
+            check(p.consume(8500),"resume requires both cups fully worn");
+        }
         for(int reason=0;reason<5;reason++){
             p.arm(10000);p.update(10100,true,true,false,10100);p.wear(0,0,10200);
             if(reason==0)p.update(10300,false,true,false,10100);
