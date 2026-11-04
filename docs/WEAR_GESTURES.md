@@ -1,6 +1,6 @@
 # Wear playback gestures
 
-For the Moto AirPods Max 2 investigation, the user explicitly chose **pause when either cup is lifted**. This changes the earlier full-removal-only policy.
+OpenPodsMax pauses when either earcup is lifted and resumes only when both cups are worn. This replaces the earlier full-removal-only pause behavior.
 
 - A fresh, valid fully worn `(0,0)` report must arm detection first. Starting or reconnecting while a cup is already off does not issue a pause.
 - Either valid off-cup report `(1,0)`, `(0,1)` or `(1,1)` starts a 500 ms pause debounce. Duplicate reports and transitions between these off-cup shapes retain the first deadline.
