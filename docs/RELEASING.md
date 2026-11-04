@@ -23,7 +23,7 @@ Private/debug APKs use a different certificate. Android will reject an in-place 
 
 ## Maintainer procedure
 
-1. Update version name/code and release notes. Run the offline tests and release build/lint; confirm CI on the exact source commit. CI uploads an unsigned validation APK named `openpodsmax-unsigned-<commit>` after checks; it is not an official release asset.
+1. Update version name/code and release notes. Run the offline tests and release build/lint; confirm CI on the exact source commit. The existing CI workflow uploads validation APKs only for its legacy regression branches; build and verify this release candidate from the exact clean source commit locally. Validation artifacts are not official release assets.
 2. Build from a clean checkout of that commit using JDK 17 and the SDK versions in README. Public assets only. `./gradlew assembleRelease lintRelease` produces an unsigned APK.
 3. Sign outside the repository using Android SDK `apksigner`, a protected keystore, and `--ks-pass file:<private-password-file>`. Never put passwords directly into command arguments or commit keystores, password files or local configuration. CI does not receive the release key.
 4. Verify the signature, certificate, application ID, version, non-debuggable manifest and ZIP alignment. Test installation, launch and same-key replacement; distinguish these checks from physical-headset acceptance.
