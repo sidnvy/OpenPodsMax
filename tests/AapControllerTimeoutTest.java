@@ -6,7 +6,7 @@ public final class AapControllerTimeoutTest {
  static Object pendingMap(AapController c)throws Exception{Field f=AapController.class.getDeclaredField("pending");f.setAccessible(true);return f.get(c);}
  public static void main(String[] args)throws Exception{
   AapController c=new AapController();c.initialize(new Context());BluetoothSocket s=new BluetoothSocket();BluetoothAdapter.nextSocket=s;
-  c.connectReadOnlyAsync("01:23:45:67:89:AB");check(s.wrote.await(2,TimeUnit.SECONDS),"handshake");
+  c.connectReadOnlyAsync("01:23:45:67:89:AB");check(s.wrote.await(4,TimeUnit.SECONDS),"handshake");
   try{
    s.frames.add(new byte[]{4,0,4,0,9,0,13,2,0,0,0});
    long end=System.nanoTime()+TimeUnit.SECONDS.toNanos(2);while(c.lastObservedMode()<0&&System.nanoTime()<end)Thread.sleep(10);

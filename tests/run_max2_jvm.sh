@@ -9,5 +9,5 @@ JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 mapfile -t STUBS < <(rg --files tests/jvm-stubs -g '*.java')
 "$JAVAC" --release 17 -d "$OUT" "${STUBS[@]}" \
  app/src/main/java/dev/airpodsnative/companion/{AapController,AapFrameValidator,ConnectionPolicy,WearPausePolicy,WearResumePolicy}.java \
- tests/{WearResumePolicyTest,WearPausePolicyTest,AapControllerQueryLockTest,AapControllerOwnershipTest,AapControllerRaceTest,AapControllerParsingTest,AapControllerTimeoutTest,AapControllerReadbackPresentationTest,AapFrameValidatorTest,ConnectionPolicyTest}.java
-for TEST in WearResumePolicyTest WearPausePolicyTest AapFrameValidatorTest ConnectionPolicyTest AapControllerQueryLockTest AapControllerOwnershipTest AapControllerRaceTest AapControllerParsingTest AapControllerTimeoutTest AapControllerReadbackPresentationTest; do "$JAVA" -cp "$OUT" "$TEST"; done
+ tests/{WearResumePolicyTest,WearPausePolicyTest,AapControllerBlockedWriteTest,AapControllerQueryLockTest,AapControllerOwnershipTest,AapControllerRaceTest,AapControllerParsingTest,AapControllerTimeoutTest,AapControllerReadbackPresentationTest,AapFrameValidatorTest,ConnectionPolicyTest}.java
+for TEST in WearResumePolicyTest WearPausePolicyTest AapFrameValidatorTest ConnectionPolicyTest AapControllerBlockedWriteTest AapControllerQueryLockTest AapControllerOwnershipTest AapControllerRaceTest AapControllerParsingTest AapControllerTimeoutTest AapControllerReadbackPresentationTest; do "$JAVA" -cp "$OUT" "$TEST"; done

@@ -73,6 +73,7 @@ public final class AapController {
         if (singleton==null) singleton=new AapController();
         return singleton;
     }
+    private final Object writeLock=new Object();
     private BluetoothSocket socket;
     private Thread reader;
     private final ConnectionPolicy policy = new ConnectionPolicy();
@@ -320,11 +321,12 @@ public final class AapController {
                 notifySession(true);
             }
             Log.i(TAG,"SOCKET_CONNECTED");
-            local.getOutputStream().write(HANDSHAKE);
-            local.getOutputStream().write(NOTIFY1);
-            local.getOutputStream().write(NOTIFY2);
-            local.getOutputStream().write(INIT_EXT);
-            local.getOutputStream().flush();
+            // Each write is a distinct L2CAP packet. Do not concatenate the
+            // handshake and subscription packets into a single SDU.
+            if(!writeCommand(local,token,HANDSHAKE)
+                || !writeCommand(local,token,NOTIFY1)
+                || !writeCommand(local,token,NOTIFY2)
+                || !writeCommand(local,token,INIT_EXT))return;
             Log.i(TAG,"AAP_HANDSHAKE_SENT");
             byte[] buf=new byte[2048];
             int packets=0;
@@ -431,12 +433,16 @@ public final class AapController {
         for(int i=0;i<MODE_TO_WIRE.length;i++)if(MODE_TO_WIRE[i]==v)return i;
         return -1;
     }
-    public synchronized boolean sendMode(int index) {
+    public boolean sendMode(int index) {
         if(index<0 || index>=MODE_TO_WIRE.length){
             Log.e(TAG,"INVALID_ANC_MODE_INDEX="+index);
             return false;
         }
-        if(!connected || socket==null || lastObservedMode<0){
+        final BluetoothSocket commandSocket;
+        final int targetMode=index;
+        final long generation;
+        synchronized(this) {
+        if(!connected || socket==null || lastObservedMode<0 || pendingMode>=0){
             Log.e(TAG,"ANC_WRITE_REJECTED_NOT_READY");
             return false;
         }
@@ -447,8 +453,9 @@ public final class AapController {
             return true;
         }
         pendingMode=index;
-        final int targetMode=index;
-        final long generation=policy.generation();
+        generation=policy.generation();
+        commandSocket=socket;
+        }
         reconnectExecutor.schedule(()->{
             synchronized(AapController.this){
                 if(policy.generation()==generation && pendingMode==targetMode){
@@ -459,12 +466,11 @@ public final class AapController {
         }, 5000, TimeUnit.MILLISECONDS);
         try {
             byte[] command={(byte)0x04,0,0x04,0,0x09,0,0x0d,(byte)MODE_TO_WIRE[index],0,0,0};
-            socket.getOutputStream().write(command);
-            socket.getOutputStream().flush();
+            if(!writeCommand(commandSocket,generation,command))return false;
             Log.i(TAG,"ANC_WRITE_SENT_INDEX="+index);
             return true;
         } catch (Exception e){
-            pendingMode=-1;
+            synchronized(this){if(socket==commandSocket && policy.generation()==generation)pendingMode=-1;}
             Log.e(TAG,"ANC_WRITE_FAILED="+e.getClass().getSimpleName());
             return false;
         }
@@ -472,7 +478,11 @@ public final class AapController {
     /** Writes only settings previously observed from the headphone itself.
      * Confirmation requires a matching device readback: not just socket write().
      */
-    public synchronized boolean sendSetting(int controlId,int wireValue) {
+    public boolean sendSetting(int controlId,int wireValue) {
+        final BluetoothSocket commandSocket;
+        final long token;
+        final PendingSetting receipt;
+        synchronized(this) {
         Integer original=observed.get(controlId);
         if(!SUPPORTED_CONTROLS.contains(controlId) || original==null || !connected || socket==null){
             Log.w(TAG,"SETTING_WRITE_REJECTED_NOT_SUPPORTED_ID="+controlId);
@@ -493,25 +503,53 @@ public final class AapController {
             Log.i(TAG,"SETTING_ALREADY_OBSERVED_ID="+controlId+" VALUE="+wireValue);
             return true;
         }
-        final long token=policy.generation();
-        final PendingSetting receipt=new PendingSetting(controlId,wireValue,original,token);
+        token=policy.generation();
+        commandSocket=socket;
+        receipt=new PendingSetting(controlId,wireValue,original,token);
         awaitingReadback.put(controlId,receipt);
+        pending.put(controlId,wireValue);
+        }
         try {
             byte[] cmd={4,0,4,0,9,0,(byte)controlId,(byte)wireValue,0,0,0};
-            pending.put(controlId,wireValue);
-            socket.getOutputStream().write(cmd);
-            socket.getOutputStream().flush();
-            Log.i(TAG,"SETTING_WRITE_SENT_ID="+controlId+" VALUE="+wireValue+" BASELINE="+original);
+            if(!writeCommand(commandSocket,token,cmd)){
+                awaitingReadback.remove(controlId,receipt);
+                return false;
+            }
+            Log.i(TAG,"SETTING_WRITE_SENT_ID="+controlId+" VALUE="+wireValue+" BASELINE="+receipt.original);
             // Some Max2 settings emit no unsolicited ACK. Reconnect only the
             // auxiliary AAP socket once to elicit an independent settings snapshot.
             reconnectExecutor.schedule(()->requestSettingReadback(receipt),1200,TimeUnit.MILLISECONDS);
             reconnectExecutor.schedule(()->expireSettingReadback(receipt),30000,TimeUnit.MILLISECONDS);
             return true;
         } catch(Exception ex) {
-            pending.remove(controlId);
-            awaitingReadback.remove(controlId,receipt);
+            synchronized(this){
+                if(socket==commandSocket && policy.generation()==token)pending.remove(controlId);
+                awaitingReadback.remove(controlId,receipt);
+            }
             Log.e(TAG,"SETTING_WRITE_FAILED_ID="+controlId+" ERROR="+ex.getClass().getSimpleName());
             return false;
+        }
+    }
+    private boolean writeCommand(BluetoothSocket destination,long token,byte[] command) throws IOException {
+        synchronized(writeLock){
+            synchronized(this){
+                if(!connected || socket!=destination || policy.generation()!=token)return false;
+            }
+            ScheduledFuture<?> timeout=reconnectExecutor.schedule(()->{
+                synchronized(AapController.this){
+                    if(socket!=destination || policy.generation()!=token)return;
+                    Log.w(TAG,"AAP_WRITE_TIMEOUT");
+                    clearDeviceState();
+                    awaitingReadback.clear();
+                    socket=null;
+                }
+                try{destination.close();}catch(IOException ignored){}
+            },3000,TimeUnit.MILLISECONDS);
+            try{
+                destination.getOutputStream().write(command);
+                destination.getOutputStream().flush();
+                synchronized(this){return connected && socket==destination && policy.generation()==token;}
+            }finally{timeout.cancel(false);}
         }
     }
     private synchronized void requestSettingReadback(PendingSetting receipt){
@@ -540,7 +578,7 @@ public final class AapController {
     public boolean sendBoolean(int controlId,boolean enabled) {
         return isBooleanControl(controlId) && sendSetting(controlId,enabled?1:2);
     }
-    public synchronized boolean sendAdaptiveNoiseStrength(int uiLevel) {
+    public boolean sendAdaptiveNoiseStrength(int uiLevel) {
         if(lastObservedMode!=2 || uiLevel<0||uiLevel>100)return false;
         return sendSetting(ADAPTIVE_NOISE,100-uiLevel);
     }
