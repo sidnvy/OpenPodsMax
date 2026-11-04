@@ -108,7 +108,11 @@ public final class WearPauseService extends Service {
             && address.equalsIgnoreCase(d.getAddress());
     }
     private void pauseIfDue(){
-        boolean consumed=active && policy.consume(SystemClock.elapsedRealtime());
+        boolean consumed=WearPauseDebounce.consumeOrReschedule(policy,active,
+            SystemClock.elapsedRealtime(),delay->{
+                handler.postDelayed(check,delay);
+                Log.i(AapController.TAG,"WEAR_DEBOUNCE_RECHECK_IN_MS="+delay);
+            });
         Log.i(AapController.TAG,"WEAR_DEBOUNCE_CHECK active="+active+" consumed="+consumed
             +" remaining_ms="+policy.delay(SystemClock.elapsedRealtime()));
         if(!consumed)return;
