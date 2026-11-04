@@ -1,6 +1,6 @@
 # Release verification and maintenance
 
-Official APKs are published only on [GitHub Releases](https://github.com/sidnvy/OpenPodsMax/releases). Version 0.2.2 uses application ID `dev.airpodsnative.companion`, version code 5, and a dedicated RSA-4096 release certificate.
+Official APKs are published only on [GitHub Releases](https://github.com/sidnvy/OpenPodsMax/releases). The 0.2.3 candidate uses application ID `dev.airpodsnative.companion`, version code 6, and the existing RSA-4096 release certificate. The latest published release remains 0.2.2 until the candidate is approved and published. See the [0.2.3 notes and acceptance gates](releases/0.2.3.md).
 
 ## Verify a download
 
@@ -8,7 +8,7 @@ Download the APK and `SHA256SUMS` from the same release, then run:
 
 ```sh
 sha256sum --check SHA256SUMS
-apksigner verify --verbose --print-certs OpenPodsMax-0.2.2.apk
+apksigner verify --verbose --print-certs OpenPodsMax-0.2.3.apk
 ```
 
 The release certificate SHA-256 fingerprint is:
@@ -23,7 +23,7 @@ Private/debug APKs use a different certificate. Android will reject an in-place 
 
 ## Maintainer procedure
 
-1. Update version name/code and release notes. Run the offline tests and release build/lint; confirm CI on the exact source commit.
+1. Update version name/code and release notes. Run the offline tests and release build/lint; confirm CI on the exact source commit. CI uploads an unsigned validation APK named `openpodsmax-unsigned-<commit>` after checks; it is not an official release asset.
 2. Build from a clean checkout of that commit using JDK 17 and the SDK versions in README. Public assets only. `./gradlew assembleRelease lintRelease` produces an unsigned APK.
 3. Sign outside the repository using Android SDK `apksigner`, a protected keystore, and `--ks-pass file:<private-password-file>`. Never put passwords directly into command arguments or commit keystores, password files or local configuration. CI does not receive the release key.
 4. Verify the signature, certificate, application ID, version, non-debuggable manifest and ZIP alignment. Test installation, launch and same-key replacement; distinguish these checks from physical-headset acceptance.
