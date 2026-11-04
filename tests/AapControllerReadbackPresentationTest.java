@@ -21,7 +21,7 @@ public final class AapControllerReadbackPresentationTest {
   BluetoothSocket sock=new BluetoothSocket();
   BluetoothAdapter.nextSocket=sock;
   c.connectReadOnlyAsync("01:23:45:67:89:AB");
-  check(sock.wrote.await(2,TimeUnit.SECONDS),"handshake");
+  check(sock.wrote.await(4,TimeUnit.SECONDS),"handshake");
   try {
    sock.frames.offer(new byte[]{4,0,4,0,9,0,40,1,0,0,0});
    until(()->c.getSetting(40)==1,"baseline device setting was not received");

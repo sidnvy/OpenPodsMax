@@ -64,7 +64,7 @@ class MainActivity : ComponentActivity() {
         setContent { AirPodsApp(preview, pairingPreview, pairFromNotification, overlayPreview) }
     }
 }
-private enum class Screen { OVERVIEW, CONTROLS, ADAPTIVE, ACCESSIBILITY, ABOUT }
+private enum class Screen { OVERVIEW, ADAPTIVE, ACCESSIBILITY, ABOUT }
 private data class BondOption(val address: String, val label: String)
 private data class DeviceState(
     val connected: Boolean, val battery: Int, val mode: Int,
@@ -313,7 +313,14 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
         val current = controller.lastObservedMode()
         android.util.Log.i("AirPodsUI", "ANC_CLICK target="+target+" connected="+active+" current="+current+" pending="+pending+" preview="+preview)
         if (!preview && active && current >= 0 && target != current && pending == null) {
-            if (controller.sendMode(target)) pending = target
+            pending = target
+            scope.launch {
+                val sent = withContext(Dispatchers.IO) { controller.sendMode(target) }
+                if (!sent) {
+                    pending = null
+                    snackbar.showSnackbar("Couldn’t change the listening mode. Check the headset connection.")
+                }
+            }
         }
     }
     val darkMode = androidx.compose.foundation.isSystemInDarkTheme()
@@ -422,14 +429,24 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
                                     if (!sent) snackbar.showSnackbar("Headset is applying a setting. Please retry.")
                                 }
                             })
-                        Screen.CONTROLS -> Controls(device, preview,
-                            onCycle = { mask -> if (!preview && controller.isConnected) controller.sendSetting(AapController.LISTENING_MODE_CYCLE, mask) })
                         Screen.ADAPTIVE -> AdaptivePage(device, preview,
-                            onAdjust = { level -> !preview && controller.isConnected && controller.sendAdaptiveNoiseStrength(level) })
+                            onAdjust = { level -> scope.launch {
+                                val sent = !preview && withContext(Dispatchers.IO) { controller.sendAdaptiveNoiseStrength(level) }
+                                if (!sent) snackbar.showSnackbar("Couldn’t confirm the adjustment. Check the headset connection.")
+                            } })
                         Screen.ACCESSIBILITY -> AccessibilityPage(device, preview,
-                            onChoice = { id, index -> if (!preview && controller.isConnected) controller.sendSetting(id, index) },
-                            onHeadDetection = { enabled -> if (!preview && controller.isConnected) controller.sendBoolean(AapController.EAR_DETECTION, enabled) },
-                            onTone = { level -> if (!preview && controller.isConnected) controller.sendSetting(AapController.CHIME_VOLUME, level) })
+                            onChoice = { id, index -> scope.launch {
+                                val sent = !preview && withContext(Dispatchers.IO) { controller.sendSetting(id, index) }
+                                if (!sent) snackbar.showSnackbar("Couldn’t apply the setting. Check the headset connection.")
+                            } },
+                            onHeadDetection = { enabled -> scope.launch {
+                                val sent = !preview && withContext(Dispatchers.IO) { controller.sendBoolean(AapController.EAR_DETECTION, enabled) }
+                                if (!sent) snackbar.showSnackbar("Couldn’t apply head detection. Check the headset connection.")
+                            } },
+                            onTone = { level -> scope.launch {
+                                val sent = !preview && withContext(Dispatchers.IO) { controller.sendSetting(AapController.CHIME_VOLUME, level) }
+                                if (!sent) snackbar.showSnackbar("Couldn’t apply the tone volume. Check the headset connection.")
+                            } })
                         Screen.ABOUT -> AboutPage(
                             device, finish, observedColorCode, colorScanMessage,
                             onChangeHeadset = {
@@ -471,7 +488,6 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
     val p = LocalApplePalette.current
     val name = when (page) {
         Screen.OVERVIEW -> "AirPods Max 2"
-        Screen.CONTROLS -> "Controls & Gestures"
         Screen.ADAPTIVE -> "Customize Adaptive Audio"
         Screen.ACCESSIBILITY -> "Accessibility"
         Screen.ABOUT -> "About your AirPods"
@@ -485,12 +501,6 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
 }
 
 private fun asBool(d: DeviceState, id: Int): Boolean? = when (d.settings[id]) { 1 -> true; 2 -> false; else -> null }
-
-private data class CycleOption(val name: String, val mask: Int)
-private val cycles = listOf(
-    CycleOption("Off", 1), CycleOption("Transparency", 4),
-    CycleOption("Adaptive", 8), CycleOption("Noise Cancellation", 2)
-)
 
 @Composable
 private fun Overview(
@@ -518,12 +528,6 @@ private fun Overview(
     }
     SectionCaption("LISTENING MODE")
     AppleListeningStrip(d.mode, enabled = d.connected, pendingMode = pending, onClickMode = onMode)
-    SectionCaption("BUTTON CYCLES BETWEEN")
-    CycleSummary(d)
-    SectionCaption("CONTROLS")
-    Group {
-        NavRow("Digital Crown", "Increase Volume: awaiting protocol verification") { onScreen(Screen.CONTROLS) }
-    }
     SectionCaption("AUDIO")
     Group {
         IosSwitchRow("Personalized Volume", "Automatically adjusts volume",
@@ -553,9 +557,9 @@ private fun Overview(
     }
     SectionCaption("ENVIRONMENT")
     Group {
-        IosSwitchRow("Loud Sound Reduction", "Not verified on Android", null, false) {}
+        NavRow("Loud Sound Reduction", "Unavailable on Android", enabled = false) {}
         Separator()
-        IosSwitchRow("Automatic Head Detection", "Pause when removed",
+        IosSwitchRow("Automatic Head Detection", "Headset sensor setting · Android pause is controlled above",
             asBool(d, AapController.EAR_DETECTION),
             d.connected && AapController.EAR_DETECTION !in d.verifying,
             pending = AapController.EAR_DETECTION in d.verifying) {
@@ -570,69 +574,8 @@ private fun Overview(
     }
 }
 
-@Composable private fun CycleSummary(d: DeviceState) {
-    val p = LocalApplePalette.current
-    val mask = d.settings[AapController.LISTENING_MODE_CYCLE]
-    Group {
-        cycles.forEachIndexed { idx, item ->
-            ChoiceRow(item.name, mask != null && mask and item.mask != 0, enabled = false) {}
-            if (idx < cycles.lastIndex) Separator()
-        }
-    }
-    Text(if (mask == null) "Button cycle choices have not been reported by the headset."
-        else "Press the listening mode button to cycle through selected modes.",
-        fontSize = 11.sp, color = p.secondary, modifier = Modifier.padding(top = 6.dp))
-}
-
-@Composable private fun Controls(d: DeviceState, preview: Boolean, onCycle: (Int) -> Unit) {
-    val p = LocalApplePalette.current
-    Group {
-        val crownArt = if (androidx.compose.foundation.isSystemInDarkTheme())
-            R.drawable.airpods_crown_detail_dark else R.drawable.airpods_crown_detail
-        Image(painterResource(crownArt), contentDescription = "Digital Crown close-up",
-            modifier = Modifier.fillMaxWidth().height(190.dp).clip(RoundedCornerShape(15.dp)),
-            contentScale = ContentScale.Fit)
-        Text("Digital Crown · Listening Mode button", color = p.secondary, fontSize = 11.sp,
-            modifier = Modifier.padding(start = 16.dp, bottom = 10.dp))
-    }
-    SectionCaption("DIGITAL CROWN")
-    Text("Increase Volume by Rotating Digital Crown", color = p.secondary, fontSize = 12.sp)
-    Group {
-        ChoiceRow("Back to Front", selected = false, enabled = false) {}
-        Separator()
-        ChoiceRow("Front to Back", selected = false, enabled = false) {}
-    }
-    Text("Rotation-direction control not yet verified by the AAP backend.",
-        color = p.secondary, fontSize = 11.sp, modifier = Modifier.padding(top = 7.dp))
-    SectionCaption("BUTTON CYCLES BETWEEN")
-    val mask = d.settings[AapController.LISTENING_MODE_CYCLE]
-    Group {
-        cycles.forEachIndexed { idx, option ->
-            ChoiceRow(option.name, mask != null && mask and option.mask != 0,
-                enabled = !preview && d.connected && mask != null &&
-                    AapController.LISTENING_MODE_CYCLE !in d.verifying) {
-                if (mask != null) {
-                    val updated = mask xor option.mask
-                    if (Integer.bitCount(updated) >= 2) onCycle(updated)
-                }
-            }
-            if (idx < cycles.lastIndex) Separator()
-        }
-    }
-    if (mask == null) Text("The headset has not reported a listening-button configuration.",
-        color = p.secondary, fontSize = 11.sp)
-    SectionCaption("CALL CONTROLS")
-    Group {
-        NavRow("Mute & Unmute", "Requires protocol verification", enabled = false) {}
-        Separator()
-        NavRow("End Call", "Requires protocol verification", enabled = false) {}
-    }
-    SectionCaption("CAMERA REMOTE")
-    Group { NavRow("Camera Control", "Apple ecosystem feature · unavailable", enabled = false) {} }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun AdaptivePage(d: DeviceState, preview: Boolean, onAdjust: (Int) -> Boolean) {
+@Composable private fun AdaptivePage(d: DeviceState, preview: Boolean, onAdjust: (Int) -> Unit) {
     val p = LocalApplePalette.current
     val raw = d.settings[AapController.ADAPTIVE_NOISE]
     val verifying = AapController.ADAPTIVE_NOISE in d.verifying
@@ -648,7 +591,8 @@ private fun Overview(
             value = draft, onValueChange = { draft = it }, valueRange = 0f..100f,
             enabled = d.connected && d.mode == 2 && raw != null && !preview && !verifying,
             onValueChangeFinished = {
-                if (!onAdjust(draft.toInt())) draft = if (raw != null) (100 - raw).toFloat() else 50f
+                onAdjust(draft.toInt())
+                draft = if (raw != null) (100 - raw).toFloat() else 50f
             },
             modifier = Modifier.weight(1f),
             colors = SliderDefaults.colors(

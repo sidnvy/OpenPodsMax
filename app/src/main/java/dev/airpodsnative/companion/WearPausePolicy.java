@@ -1,7 +1,8 @@
 package dev.airpodsnative.companion;
 
-/** AAP Max 2 full-removal debounce. No media command on initial state, partial
- * placement, unknown reports, reconnect, or reinsertion. Android-independent. */
+/** AAP Max 2 either-cup removal debounce, armed only by a fresh fully worn state.
+ * No media command on initial/unknown reports, reconnect, or reinsertion.
+ * Android-independent; resume still separately requires both cups worn. */
 public final class WearPausePolicy {
     public static final long DEBOUNCE_MS=500;
     private boolean wornSinceReset;
@@ -10,7 +11,6 @@ public final class WearPausePolicy {
     public void observe(int primary,int secondary,long now){
         if(primary<0 || primary>1 || secondary<0 || secondary>1){reset();return;}
         if(primary==0 && secondary==0){wornSinceReset=true;due=-1;return;}
-        if(primary!=1 || secondary!=1){due=-1;return;}
         if(wornSinceReset && due<0)due=now+DEBOUNCE_MS;
     }
     public long delay(long now){return due<0?-1:Math.max(0,due-now);}

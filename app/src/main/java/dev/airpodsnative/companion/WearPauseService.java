@@ -26,15 +26,26 @@ public final class WearPauseService extends Service {
     private long generation=-1;
     private boolean active;
     private final Runnable check=this::pauseIfDue;
-    private final AapController.WearListener wear=(address,token,primary,secondary)->handler.post(()->{
-        if(!active || target==null || !target.equalsIgnoreCase(address) || !controller.isCurrentSession(address,token))return;
-        if(generation!=token){reset();generation=token;}
-        policy.observe(primary,secondary,SystemClock.elapsedRealtime());
-        resume.wear(primary,secondary);
-        handler.removeCallbacks(check);
-        long delay=policy.delay(SystemClock.elapsedRealtime());
-        if(delay>=0)handler.postDelayed(check,delay);
-    });
+    private final AapController.WearListener wear=(address,token,primary,secondary)->{
+        long received=SystemClock.elapsedRealtime();
+        handler.post(()->{
+            boolean matches=target!=null && target.equalsIgnoreCase(address);
+            boolean current=controller.isCurrentSession(address,token);
+            if(!active || !matches || !current){
+                Log.i(AapController.TAG,"WEAR_EVENT_SKIPPED active="+active+" target="+matches+" session="+current);
+                return;
+            }
+            if(generation!=token){reset();generation=token;}
+            long now=SystemClock.elapsedRealtime();
+            policy.observe(primary,secondary,now);
+            resume.wear(primary,secondary);
+            handler.removeCallbacks(check);
+            long delay=policy.delay(SystemClock.elapsedRealtime());
+            Log.i(AapController.TAG,"WEAR_POLICY primary="+primary+" secondary="+secondary
+                +" delay_ms="+delay+" dispatch_ms="+(now-received));
+            if(delay>=0)handler.postDelayed(check,delay);
+        });
+    };
     private final AapController.SessionListener session=connected->handler.post(()->{
         Log.i(AapController.TAG,connected?"WEAR_AAP_SESSION_CONNECTED":"WEAR_AAP_SESSION_DISCONNECTED");
         reset();
@@ -97,7 +108,14 @@ public final class WearPauseService extends Service {
             && address.equalsIgnoreCase(d.getAddress());
     }
     private void pauseIfDue(){
-        if(!active || !policy.consume(SystemClock.elapsedRealtime()))return;
+        boolean consumed=WearPauseDebounce.consumeOrReschedule(policy,active,
+            SystemClock.elapsedRealtime(),delay->{
+                handler.postDelayed(check,delay);
+                Log.i(AapController.TAG,"WEAR_DEBOUNCE_RECHECK_IN_MS="+delay);
+            });
+        Log.i(AapController.TAG,"WEAR_DEBOUNCE_CHECK active="+active+" consumed="+consumed
+            +" remaining_ms="+policy.delay(SystemClock.elapsedRealtime()));
+        if(!consumed)return;
         try {
             boolean enabled=prefs().getBoolean(PREF,false);
             boolean sessionCurrent=controller.isCurrentSession(target,generation);

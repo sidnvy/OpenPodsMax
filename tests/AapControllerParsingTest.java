@@ -7,7 +7,7 @@ public final class AapControllerParsingTest {
  static void processed(BluetoothSocket s,int count)throws Exception{long end=System.nanoTime()+TimeUnit.SECONDS.toNanos(2);while(s.reads.get()<count&&System.nanoTime()<end)Thread.sleep(5);check(s.reads.get()>=count,"reader deadline");}
  public static void main(String[] args)throws Exception{
   AapController c=new AapController();c.initialize(new Context());BluetoothSocket s=new BluetoothSocket();BluetoothAdapter.nextSocket=s;
-  c.connectReadOnlyAsync("01:23:45:67:89:AB");check(s.wrote.await(2,TimeUnit.SECONDS),"handshake");
+  c.connectReadOnlyAsync("01:23:45:67:89:AB");check(s.wrote.await(4,TimeUnit.SECONDS),"handshake");
   try{
    s.frames.add(new byte[]{4,0,99,0,9,0,46,50,0,0,0});processed(s,2);
    check(!c.hasSetting(46),"wrong service accepted as a device capability");

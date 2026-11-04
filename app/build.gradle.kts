@@ -11,8 +11,8 @@ android {
         minSdk = 32
         targetSdk = 36
         testInstrumentationRunner = "dev.airpodsnative.companion.FunctionalAcceptanceRunner"
-        versionCode = 5
-        versionName = "0.2.2"
+        versionCode = 6
+        versionName = "0.2.3"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
