@@ -75,6 +75,7 @@ public final class AapController {
     }
     private final Object writeLock=new Object();
     private BluetoothSocket socket;
+    private BluetoothSocket readbackReconnectSocket;
     private Thread reader;
     private final ConnectionPolicy policy = new ConnectionPolicy();
     private final ScheduledExecutorService reconnectExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -124,6 +125,7 @@ public final class AapController {
                 Log.i(TAG,"AAP_RELEASE_AUDIO_DISCONNECTED");
                 clearDeviceState();
                 awaitingReadback.clear();
+                readbackReconnectSocket=null;
                 socket=null;
                 try{old.close();}catch(Exception ignored){}
             }
@@ -236,6 +238,7 @@ public final class AapController {
         long token=policy.select(address);
         if(!same){
             awaitingReadback.clear();
+            readbackReconnectSocket=null;
             if(retry!=null){retry.cancel(false);retry=null;}
             BluetoothSocket previous=socket;socket=null;
             if(previous!=null)try{previous.close();}catch(Exception ignored){}
@@ -419,10 +422,18 @@ public final class AapController {
             try {if(local!=null)local.close();}catch(Exception ignored){}
             synchronized(this){
                 if(policy.current(token,address)){
+                    boolean planned=local!=null && readbackReconnectSocket==local;
+                    readbackReconnectSocket=null;
                     clearDeviceState();
                     running=false;
                     socket=null;
-                    retryIfCurrent(address,token);
+                    if(planned && hasAudioConnection(address)){
+                        // A deliberate settings readback is not a connection failure.
+                        // Keep genuine failure history, but do not compound it on
+                        // every user setting change or strand wear detection for 30s.
+                        Log.i(TAG,"AAP_READBACK_RECONNECT_IN_MS=1000");
+                        retry=reconnectExecutor.schedule(()->startAttempt(address,token),1000,TimeUnit.MILLISECONDS);
+                    }else retryIfCurrent(address,token);
                 }
             }
             Log.i(TAG,"DISCONNECTED");
@@ -563,7 +574,9 @@ public final class AapController {
             return;
         }
         Log.i(TAG,"SETTING_READBACK_RECONNECT_REQUESTED_ID="+receipt.settingId);
+        readbackReconnectSocket=toClose;
         try{toClose.close();}catch(IOException ex){
+            readbackReconnectSocket=null;
             Log.w(TAG,"SETTING_READBACK_CLOSE_ERROR_ID="+receipt.settingId);
         }
         // The reader's finally block owns state invalidation and reconnection.
@@ -585,6 +598,7 @@ public final class AapController {
     public synchronized void stop() {
         policy.stop();
         awaitingReadback.clear();
+        readbackReconnectSocket=null;
         if(retry!=null){retry.cancel(false);retry=null;}
         running=false;
         BluetoothSocket old=socket;socket=null;

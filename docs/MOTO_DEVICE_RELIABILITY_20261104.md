@@ -25,3 +25,11 @@
 - Device update uses the original release certificate on the existing signing host, followed by an in-place install. No uninstall or app-data clearing.
 - Package-replacement recovery was observed: WEAR_RECOVERY_REQUESTED followed by an active sticky foreground service. The phone denies shell-generated BOOT_COMPLETED broadcasts. Actual reboot acceptance and long-duration wear reliability remain separate, unproven gates.
 - Native Settings persistence across Bluetooth cycles/reboot is not solved by these APK changes. A durable solution needs a separately designed privileged integration, including its availability after reboot. Do not claim permanent registration from an immediate successful ADB readback.
+
+## Follow-up: wear tracing and planned-reconnect backoff
+
+- A corrected-build physical test still failed while the service was foreground and the phone was awake. Raw full-removal and reinsertion events arrived, but there was no pause-request or guard-rejection log. This individual failure's cause remains unproven.
+- Added address-free logs for accepted/rejected wear delivery, main-thread dispatch latency, debounce scheduling and debounce consumption. The diagnostic build then passed two user-confirmed pause/resume cycles, with corresponding targeted pause and resume requests. Logging alone must not be described as a proven playback fix.
+- A reversible Conversation Awareness roundtrip was independently read back and restored to its original enabled value. The first deliberate AAP readback reconnect waited 1000 ms; the second waited 2000 ms. Source inspection confirms each planned readback was incorrectly consuming the genuine-failure exponential backoff, eventually creating 30-second control/wear-reporting gaps after rapid setting changes.
+- Planned readback socket closures now use a fixed one-second reconnect delay without incrementing or clearing genuine failure history. Actual socket failures retain the existing backoff and audio-ownership gate. The marker is scoped to the precise socket and cleared on selection, stop, route loss and reader completion.
+- A new controller regression performs three consecutive setting readbacks, verifies that the delay does not grow, and confirms that a subsequent genuine disconnect still increments failure history.
