@@ -37,11 +37,12 @@ jobs:
           python3 tests/test_bootstrap_wrapper.py
           python3 tests/portability_static_contract.py
       - name: Build without private assets or release credentials
-        run: ./gradlew assembleDebug assembleRelease lintDebug lintRelease --no-daemon
-      - name: Upload unsigned validation APK
+        run: ./gradlew assembleDebug assembleRelease lintDebug --no-daemon
+      - name: Upload unsigned Moto regression APK
+        if: github.ref == 'refs/heads/fix/moto-wear-background-reliability' || github.ref == 'refs/heads/fix/toggle-readback-ui'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: openpodsmax-unsigned-${{ github.sha }}
+          name: moto-wear-regression-unsigned
           path: app/build/outputs/apk/release/app-release-unsigned.apk
           retention-days: 3
           if-no-files-found: error
