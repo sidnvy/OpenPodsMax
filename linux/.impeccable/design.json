@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-05T03:52:20.043839+00:00",
+  "title": "Design System: OpenPodsMax Linux Quick Toggle",
+  "extensions": {
+    "shadows": [],
+    "motion": [
+      {
+        "name": "inherited-ripple",
+        "value": "RippleButton.rippleDuration: 1200 ms; fade duration: twice rippleDuration",
+        "purpose": "Inherited ii button feedback; easing and color animation remain owned by Appearance."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "single-column-listening-modes",
+        "value": "320 logical pixels of ScrollView.availableWidth",
+        "purpose": "Listening modes use one column below this available width, otherwise two uniform columns."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Headphone header",
+      "kind": "custom",
+      "description": "Native RippleButton: identity, observed mode/source, one battery value and expansion chevron. Two-pixel active-focus outline. Native Qt Quick component; no HTML/CSS replica.",
+      "refersTo": "headphone-header"
+    },
+    {
+      "name": "Listening mode",
+      "kind": "button",
+      "description": "Native RippleButton: observed radio selection, inherited primary/on-primary roles and inset keyboard-focus outline. Native Qt Quick component; no HTML/CSS replica. Equal-width two-column grid, one column below 320 logical pixels of available scroll width.",
+      "refersTo": "listening-mode"
+    },
+    {
+      "name": "Policy switch",
+      "kind": "input",
+      "description": "Inherited StyledSwitch paired with a label; readback controls checked state. Native Qt Quick component; no HTML/CSS replica."
+    },
+    {
+      "name": "Ear-pause selector",
+      "kind": "input",
+      "description": "Native StyledComboBox: Off, Either earcup and Both earcups. Native Qt Quick component; no HTML/CSS replica. Preferred width is the lesser of 154 logical pixels and 46% of available scroll width.",
+      "refersTo": "ear-pause-selector"
+    },
+    {
+      "name": "Use on this computer",
+      "kind": "button",
+      "description": "Full-width native DialogButton; availability follows busy state, automatic switching and observed audio source. Native Qt Quick component; no HTML/CSS replica."
+    }
+  ],
+  "narrative": {
+    "northStar": "Headphone controls beside the desktop's other quick toggles.",
+    "overview": "This document covers the native Linux Qt Quick / Quickshell integration only. Its visual authority is the installed ii shell: Material theme roles, configured fonts, rounded widgets and ripple interactions. It does not define the Android application's design system. Product scope is recorded in PRODUCT.md.\n\nThe compact header identifies the headphones, then shows the observed listening mode, audio source and one headphone battery value. Expanding reveals less frequent controls in place, keeping the existing Quick Toggle as the working surface. Feedback describes observed state, waiting and failure without implying that a click has already changed the headphones.",
+    "keyCharacteristics": [
+      "Native ii widgets and system-adaptive theme roles.",
+      "Compact identity and status before detailed controls.",
+      "In-place expansion with bounded scrolling.",
+      "Readback-driven selection and visible keyboard focus."
+    ],
+    "rules": [
+      {
+        "name": "The Theme Ownership Rule",
+        "body": "Bind to the shell's semantic roles; do not freeze a palette sampled from one screenshot into this integration.",
+        "section": "colors"
+      },
+      {
+        "name": "The Readback Rule",
+        "body": "A requested value is not a confirmed value. Preserve known, unknown, pending and error distinctions when extending any control.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do reuse ii theme roles, typography and native widgets.",
+      "Do keep identification and observed status in the compact header.",
+      "Do preserve bounded expansion, scrolling and lower-widget visibility bindings.",
+      "Do keep focus outlines, accessible names and readback-driven selection."
+    ],
+    "donts": [
+      "Don't create a separate window for this Quick Toggle workflow.",
+      "Don't hardcode the current theme's colors, font family or corner scale.",
+      "Don't introduce iOS or Android styling into this native desktop surface.",
+      "Don't display requested settings or unknown headphone values as confirmed."
+    ]
+  }
+}

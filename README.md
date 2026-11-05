@@ -59,3 +59,9 @@ Include your phone model, Android version, headset firmware and reproduction ste
 Built by sid. Thanks to CAPod and LSPosed for the work acknowledged in the third-party notices.
 
 OpenPodsMax is an independent project, not affiliated with Apple or Google. AirPods is an Apple trademark.
+
+## Linux desktop (experimental)
+
+[Linux Quick Toggle integration](linux/README.md) puts headphone controls and
+native handoff inside an existing ii Quickshell sidebar, without a separate
+window. This investigation build is separate from the published Android release.

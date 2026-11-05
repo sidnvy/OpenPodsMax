@@ -37,3 +37,11 @@ python3 scripts/check_public_tree.py
 [Source checks](https://github.com/sidnvy/OpenPodsMax/actions/workflows/checks.yml) runs credential scanning, public-tree checks, regressions, builds and lint. Its status does not replace hardware acceptance testing.
 
 Android instrumentation and metadata helpers are development tools. Inspect their scope before use, snapshot the precise target and verify restoration support before metadata writes. The included artwork registration helper cannot exactly restore an original null value.
+
+## Linux desktop
+
+Build and run the C backend regressions with `bash linux/build.sh`. Run
+`python3 linux/tests/test_install.py` and
+`python3 linux/tests/test_transport_rearm.py` for installation/rollback and
+transport recovery safety. See [Linux installation](linux/README.md) for the
+Quickshell integration, dependencies, experimental limits and guarded rollback.

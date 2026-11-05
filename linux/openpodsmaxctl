@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Small event-driven D-Bus bridge. Does not open Bluetooth or carry audio."""
+import argparse
+import json
+import sys
+import gi
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib
+BUS = "io.github.anoryth.EarPort"
+PATH = "/io/github/anoryth/EarPort"
+IFACE = BUS + "1"
+FIELDS = "Connected DeviceName DeviceModel DisplayName IsHeadphones SupportsANC SupportsAdaptive BatteryLeft BatteryRight ChargingLeft NoiseControlMode NoiseControlKnown ConversationalAwareness ConversationKnown EarPauseMode AudioSource HandoffEnabled".split()
+def snapshot(proxy):
+    values = {name: value.unpack() for name in FIELDS if (value := proxy.get_cached_property(name)) is not None}
+    if not proxy.get_name_owner():
+        values = {"Connected": False}
+    print(json.dumps(values, separators=(",", ":")), flush=True)
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("command", choices=["status", "watch", "noise", "conversation", "ear-pause", "handoff", "take"])
+    parser.add_argument("value", nargs="?")
+    args = parser.parse_args()
+    methods = {"noise": ("SetNoiseControlMode", "s", ["off", "anc", "transparency", "adaptive"]),
+               "conversation": ("SetConversationalAwareness", "b", ["true", "false"]),
+               "ear-pause": ("SetEarPauseMode", "i", ["0", "1", "2"]),
+               "handoff": ("SetHandoffEnabled", "b", ["true", "false"])}
+    if args.command in methods and args.value not in methods[args.command][2]:
+        parser.error("invalid or missing setting value")
+    if args.command not in methods and args.value is not None:
+        parser.error("this command takes no value")
+    proxy = Gio.DBusProxy.new_for_bus_sync(Gio.BusType.SESSION,
+        Gio.DBusProxyFlags.DO_NOT_AUTO_START, None, BUS, PATH, IFACE, None)
+    proxy.set_default_timeout(3000)
+    if args.command == "watch":
+        proxy.connect("g-properties-changed", lambda *_: snapshot(proxy))
+        proxy.connect("notify::g-name-owner", lambda *_: snapshot(proxy))
+        snapshot(proxy)
+        GLib.MainLoop().run()
+    elif args.command == "status":
+        snapshot(proxy)
+    else:
+        if not proxy.get_name_owner():
+            raise RuntimeError("Headphone service is unavailable")
+        method, signature, value = "RequestTakeover", "", None
+        if args.command in methods:
+            method, signature, _ = methods[args.command]
+            value = (args.value == "true") if signature == "b" else int(args.value) if signature == "i" else args.value
+        result = proxy.call_sync(method, GLib.Variant("(" + signature + ")", () if value is None else (value,)),
+                                 Gio.DBusCallFlags.NO_AUTO_START, 3000, None)
+        if args.command == "take" and not result.unpack()[0]:
+            raise RuntimeError("Cannot switch now. Wear the headphones and finish any call first.")
+if __name__ == "__main__":
+    try:
+        main()
+    except (GLib.Error, RuntimeError) as error:
+        print(str(error), file=sys.stderr)
+        sys.exit(1)
