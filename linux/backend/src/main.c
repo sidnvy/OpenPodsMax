@@ -43,6 +43,12 @@ typedef struct {
     guint reconnect_timeout_id;
     int reconnect_attempts;
     bool bluez_connected;   /* Device still connected at BlueZ level */
+    GDBusConnection *sleep_bus;
+    guint sleep_signal_id;
+    guint wake_standby_id;
+    guint standby_poll_id;
+    bool sleeping;
+    GSubprocess *standby_probe;
 
     /* AAP initialization is ACK-driven. Newer AirPods can take about a
      * second to finish feature negotiation, so an eager notification request
@@ -511,6 +517,10 @@ static bool claim_audio_for_linux(bool restart_sink)
         const char *address = app.state.device_address != NULL
                                 ? app.state.device_address
                                 : app.pending_address;
+        if (app.config.auto_connect_on_wear &&
+            (app.current_audio_source.type == AAP_AUDIO_SOURCE_NONE ||
+             !audio_source_is_local(&app.current_audio_source)))
+            bluez_monitor_connect_media(app.bluez_monitor, address);
         media_control_reclaim_audio(app.media_control, address);
     }
     return true;
@@ -1403,6 +1413,104 @@ static void on_media_playback_stopped(void *user_data)
  * BlueZ callbacks
  * ========================================================================== */
 
+static bool can_open_standby(void)
+{
+    return !app.sleeping && app.config.handoff_enabled &&
+        app.config.auto_connect_on_wear && !app.bluez_connected &&
+        (app.bt_conn == NULL ||
+         bt_connection_get_state(app.bt_conn) == BT_STATE_DISCONNECTED);
+}
+
+static void on_standby_peer_verified(GObject *source, GAsyncResult *result, gpointer data)
+{
+    BluezDeviceInfo *device = data;
+    GSubprocess *probe = G_SUBPROCESS(source);
+    bool verified = g_subprocess_wait_check_finish(probe, result, NULL);
+    g_clear_object(&app.standby_probe);
+    if (verified && can_open_standby()) {
+        BluezDeviceInfo *paired = bluez_monitor_find_paired_device(app.bluez_monitor, device->address);
+        if (paired != NULL && !paired->connected) {
+            g_message("Verified Apple peer identity; opening AirPods control-only standby");
+            connect_to_airpods(paired->address, paired->name);
+        }
+        bluez_device_info_free(paired);
+    } else if (!verified) {
+        g_message("Skipping AirPods standby: peer Apple identity could not be verified");
+    }
+    bluez_device_info_free(device);
+}
+
+static void on_confirmed_wear(const BluezDeviceInfo *device, void *data)
+{
+    (void)data;
+    const char *peer = g_getenv("OPENPODS_HANDOFF_PEER_MAC");
+    const char *helper = g_getenv("OPENPODSMAX_STANDBY_HELPER");
+    if (!can_open_standby() || app.standby_probe != NULL ||
+        !airpods_address_equal(device->address, g_getenv("OPENPODS_HANDOFF_HEADSET_MAC")) ||
+        peer == NULL || helper == NULL)
+        return;
+
+    BluezDeviceInfo *target = bluez_monitor_find_paired_device(app.bluez_monitor, device->address);
+    if (target == NULL)
+        return;
+
+    GError *error = NULL;
+    app.standby_probe = g_subprocess_new(
+        G_SUBPROCESS_FLAGS_STDOUT_SILENCE | G_SUBPROCESS_FLAGS_STDERR_SILENCE,
+        &error, "python3", helper, peer, NULL);
+    if (app.standby_probe == NULL) {
+        g_warning("Could not start standby identity check: %s", error->message);
+        g_error_free(error);
+        bluez_device_info_free(target);
+        return;
+    }
+    g_subprocess_wait_check_async(app.standby_probe, NULL, on_standby_peer_verified, target);
+}
+
+static void probe_selected_standby(void)
+{
+    if (!can_open_standby())
+        return;
+    BluezDeviceInfo *device = bluez_monitor_find_paired_device(
+        app.bluez_monitor, g_getenv("OPENPODS_HANDOFF_HEADSET_MAC"));
+    if (device != NULL)
+        on_confirmed_wear(device, NULL);
+    bluez_device_info_free(device);
+}
+
+static gboolean standby_poll(gpointer data)
+{
+    (void)data;
+    probe_selected_standby();
+    return G_SOURCE_CONTINUE;
+}
+
+static gboolean after_wake(gpointer data)
+{
+    (void)data;
+    app.wake_standby_id = 0;
+    probe_selected_standby();
+    return G_SOURCE_REMOVE;
+}
+
+static void on_prepare_for_sleep(GDBusConnection *bus, const char *sender, const char *path,
+                                 const char *interface, const char *signal,
+                                 GVariant *parameters, gpointer data)
+{
+    (void)bus; (void)sender; (void)path; (void)interface; (void)signal; (void)data;
+    gboolean sleeping;
+    g_variant_get(parameters, "(b)", &sleeping);
+    app.sleeping = sleeping;
+    if (app.wake_standby_id != 0) {
+        g_source_remove(app.wake_standby_id);
+        app.wake_standby_id = 0;
+    }
+    if (sleeping && app.standby_probe != NULL)
+        g_subprocess_force_exit(app.standby_probe);
+    if (!sleeping && app.config.auto_connect_on_wear)
+        app.wake_standby_id = g_timeout_add_seconds(3, after_wake, NULL);
+}
+
 static void on_bluez_device_connected(const BluezDeviceInfo *device, void *user_data)
 {
     (void)user_data;
@@ -1773,6 +1881,15 @@ static gboolean on_sigterm(gpointer user_data)
 static void cleanup(void)
 {
     g_message("Cleaning up...");
+    if (app.wake_standby_id != 0) g_source_remove(app.wake_standby_id);
+    if (app.standby_poll_id != 0) g_source_remove(app.standby_poll_id);
+    if (app.sleep_signal_id != 0)
+        g_dbus_connection_signal_unsubscribe(app.sleep_bus, app.sleep_signal_id);
+    g_clear_object(&app.sleep_bus);
+    if (app.standby_probe != NULL) {
+        g_subprocess_force_exit(app.standby_probe);
+        g_clear_object(&app.standby_probe);
+    }
     cancel_control_refresh();
     cancel_transport_rearm();
 
@@ -1883,6 +2000,13 @@ int main(int argc, char *argv[])
 
     bluez_monitor_set_connected_callback(app.bluez_monitor, on_bluez_device_connected, NULL);
     bluez_monitor_set_disconnected_callback(app.bluez_monitor, on_bluez_device_disconnected, NULL);
+    bluez_monitor_set_worn_callback(app.bluez_monitor, on_confirmed_wear);
+    app.sleep_bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, NULL);
+    if (app.sleep_bus != NULL)
+        app.sleep_signal_id = g_dbus_connection_signal_subscribe(
+            app.sleep_bus, "org.freedesktop.login1", "org.freedesktop.login1.Manager",
+            "PrepareForSleep", "/org/freedesktop/login1", NULL, G_DBUS_SIGNAL_FLAGS_NONE,
+            on_prepare_for_sleep, NULL, NULL);
     bluez_monitor_set_auto_connect_on_wear(app.bluez_monitor,
                                            app.config.auto_connect_on_wear);
 
@@ -1894,6 +2018,11 @@ int main(int argc, char *argv[])
 
     /* Check for already connected devices */
     bluez_monitor_check_existing_devices(app.bluez_monitor);
+    /* Some Max 2 firmware does not advertise wear while connected to a
+     * different host. A slow, gated control-only probe covers that case. */
+    if (app.config.auto_connect_on_wear) {
+        app.standby_poll_id = g_timeout_add_seconds(25, standby_poll, NULL);
+    }
 
     g_message("EarPort Daemon running. Press Ctrl+C to quit.");
 

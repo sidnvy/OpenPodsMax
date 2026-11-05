@@ -87,6 +87,7 @@ def main():
             "[Service]\nType=simple\nEnvironment=XDG_CONFIG_HOME=%h/.config/openpodsmax-linux/runtime\n"
             "EnvironmentFile=%h/.config/openpodsmax-linux/peer.env\n"
             "Environment=OPENPODSMAX_REARM_HELPER=%h/.local/share/openpodsmax-linux/transport_rearm.py\n"
+            "Environment=OPENPODSMAX_STANDBY_HELPER=%h/.local/share/openpodsmax-linux/standby_peer.py\n"
             "ExecStart=%h/.local/share/openpodsmax-linux/openpodsmax-daemon\n"
             "Restart=on-failure\nRestartSec=3\nNoNewPrivileges=true\nUMask=0077\n\n"
             "[Install]\nWantedBy=default.target\n")
@@ -98,13 +99,14 @@ def main():
         (Path.home()/".local/bin/openpodsmaxctl", (source/"openpodsmaxctl").read_bytes(), 0o755),
         (data/"openpodsmax-daemon", binary.read_bytes(), 0o755),
         (data/"transport_rearm.py", (source/"transport_rearm.py").read_bytes(), 0o644),
+        (data/"standby_peer.py", (source/"standby_peer.py").read_bytes(), 0o644),
         (data/"LICENSE", (source/"backend/LICENSE").read_bytes(), 0o644),
         (config/"peer.env", args.peer_env.read_bytes(), 0o600),
         (Path.home()/".config/systemd/user/openpodsmax-linux.service", unit.encode(), 0o644),
     ]
     runtime = config/"runtime/earport/daemon.conf"
     if not runtime.exists():
-        files.append((runtime, b"[Settings]\near_pause_mode=0\nhandoff_enabled=true\nauto_connect_on_wear=true\ndisconnect_on_removal=false\n", 0o600))
+        files.append((runtime, b"[Settings]\near_pause_mode=0\nhandoff_enabled=true\nauto_connect_on_wear=false\ndisconnect_on_removal=false\n", 0o600))
     backup = data/"backups"/(str(time.time_ns()))
     backup.mkdir(parents=True, mode=0o700)
     manifest = []

@@ -86,6 +86,11 @@ void bluez_monitor_set_disconnected_callback(BluezMonitor *monitor,
                                               BluezDeviceCallback callback,
                                               void *user_data);
 
+/** Override the default full-profile connection for confirmed wear. */
+void bluez_monitor_set_worn_callback(BluezMonitor *monitor, BluezDeviceCallback callback);
+BluezDeviceInfo *bluez_monitor_find_paired_device(BluezMonitor *monitor, const char *address);
+void bluez_monitor_connect_media(BluezMonitor *monitor, const char *address);
+
 /** Enable continuous LE discovery and connect-on-confirmed-wear handling. */
 void bluez_monitor_set_auto_connect_on_wear(BluezMonitor *monitor, bool enabled);
 

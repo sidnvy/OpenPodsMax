@@ -28,9 +28,25 @@ the rollback manifest directory. It does not start or enable a service, alter
 Bluetooth identity, or change bonds. Repeated installation preserves the same
 sidebar injection. Other desktop customizations are retained.
 
-New installations enable wear-based reconnection for the exact selected bond.
-Nearby wear observations are confirmed before connecting; scanning stops while
-the device is connected. Existing installations retain their explicit policy.
+Standby reconnection is opt-in for the exact selected bond. To enable it, set
+`auto_connect_on_wear=true` under `[Settings]` in
+`~/.config/openpodsmax-linux/runtime/earport/daemon.conf` and restart the service.
+Wear detection, wake from suspend and a 25-second fallback can trigger a retry.
+The daemon verifies the configured phone's current Apple Bluetooth Device ID
+before opening the headphone control channel. The automatic connection requests
+no audio profile. A new local media playback request can claim the headphones
+and open A2DP after the existing wear, source and call checks pass. Existing
+installations retain their explicit policy.
+
+On the test laptop with the Moto advertising its temporary Apple Device ID, the
+headphones automatically restored the Linux control channel after a Smart Case
+cycle. The Moto media profile needed a separate recovery in that run. With Moto
+music routed to the headphones, a Linux-only reconnect preserved audible phone
+playback and a new mpv Play action handed off in both directions. In two real
+suspend tests phone audio continued. The usual suspend recovered its control
+socket after about seven seconds; the run with a Linux disconnect just before
+suspend took over two minutes. The owner heard both devices after the usual
+resume, with the first source change occurring on local Play.
 
 The startup configuration keeps Linux wear-pause disabled; select Either earcup in the panel to enable it. Linux-only
 playback policy is separate from the Android setting. No listening settings are

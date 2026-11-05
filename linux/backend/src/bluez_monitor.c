@@ -51,6 +51,7 @@ struct BluezMonitor {
     GHashTable *paired_devices; /* path -> BluezDeviceInfo */
 
     bool auto_connect_on_wear;
+    BluezDeviceCallback worn_callback;
     GHashTable *auto_connect_states; /* advertising path -> state */
     GHashTable *auto_connect_state_models; /* advertising path -> BLE model */
     GHashTable *auto_connect_model_attempts; /* BLE model -> gint64 */
@@ -733,6 +734,41 @@ static BluezDeviceInfo *find_cached_target(BluezMonitor *monitor,
     return NULL;
 }
 
+BluezDeviceInfo *bluez_monitor_find_paired_device(BluezMonitor *monitor, const char *address)
+{
+    BluezDeviceInfo *device = find_cached_target(monitor, address, false);
+    if (device != NULL && !device->paired) {
+        bluez_device_info_free(device);
+        return NULL;
+    }
+    return device;
+}
+
+static void on_connect_media_finished(GObject *source, GAsyncResult *result, gpointer data)
+{
+    (void)data;
+    GError *error = NULL;
+    GVariant *reply = g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), result, &error);
+    if (error != NULL && !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        g_debug("AirPods media profile request: %s", error->message);
+    g_clear_error(&error);
+    g_clear_pointer(&reply, g_variant_unref);
+}
+
+void bluez_monitor_connect_media(BluezMonitor *monitor, const char *address)
+{
+    BluezDeviceInfo *device = bluez_monitor_find_paired_device(monitor, address);
+    if (device == NULL)
+        return;
+
+    g_dbus_connection_call(monitor->connection, BLUEZ_SERVICE, device->object_path,
+                           BLUEZ_DEVICE_INTERFACE, "ConnectProfile",
+                           g_variant_new("(s)", "0000110b-0000-1000-8000-00805f9b34fb"),
+                           G_VARIANT_TYPE_UNIT, G_DBUS_CALL_FLAGS_NONE, 12000, NULL,
+                           on_connect_media_finished, NULL);
+    bluez_device_info_free(device);
+}
+
 static BluezDeviceInfo *find_disconnect_target(BluezMonitor *monitor,
                                                 const char *selector)
 {
@@ -978,7 +1014,10 @@ static void process_apple_manufacturer_data(BluezMonitor *monitor,
         *attempt_time = now_usec;
         g_hash_table_replace(monitor->auto_connect_model_attempts,
                              model_key, attempt_time);
-        request_device_connect(monitor, target, object_path);
+        if (monitor->worn_callback != NULL)
+            monitor->worn_callback(target, NULL);
+        else
+            request_device_connect(monitor, target, object_path);
         bluez_device_info_free(target);
         return;
     }
@@ -2019,6 +2058,11 @@ void bluez_monitor_set_disconnected_callback(BluezMonitor *monitor,
 {
     monitor->disconnected_callback = callback;
     monitor->disconnected_user_data = user_data;
+}
+
+void bluez_monitor_set_worn_callback(BluezMonitor *monitor, BluezDeviceCallback callback)
+{
+    monitor->worn_callback = callback;
 }
 
 void bluez_monitor_set_auto_connect_on_wear(BluezMonitor *monitor, bool enabled)
