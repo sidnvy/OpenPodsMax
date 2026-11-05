@@ -72,7 +72,16 @@ internal object MotoBluetoothIdentity {
         [ "$(getenforce)" = Enforcing ] || exit 12
         dumpsys audio | grep -q 'Actual mode = MODE_NORMAL' || exit 13
         state() { dumpsys bluetooth_manager | sed -n 's/^  State: *//p'; }
-        [ "$(state)" = ON ] || exit 14
+        if [ "$(state)" != ON ]; then
+            [ "$(settings get global bluetooth_on)" = 1 ] || exit 14
+            # KernelSU late-load can still be bringing Android Bluetooth back.
+            for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
+                [ "$(state)" != ON ] || break
+                sleep 1
+            done
+            [ "$(state)" = ON ] || exit 14
+            dumpsys audio | grep -q 'Actual mode = MODE_NORMAL' || exit 13
+        fi
         property=bluetooth.device_id.vendor_id
         previous="$(getprop "${'$'}property")"
         [ "${'$'}previous" != 0x004C ] || exit 0
