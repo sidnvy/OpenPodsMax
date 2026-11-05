@@ -47,6 +47,11 @@ import kotlinx.coroutines.withContext
  */
 class MainActivity : ComponentActivity() {
     private val pairFromNotification = mutableStateOf(false)
+    private var foregroundGeneration by mutableIntStateOf(0)
+    override fun onResume() {
+        super.onResume()
+        foregroundGeneration++
+    }
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -61,7 +66,7 @@ class MainActivity : ComponentActivity() {
         val overlayPreview = debug && intent.getBooleanExtra("overlay_preview", false)
         val preview = debug && (pairingPreview || overlayPreview || intent.getBooleanExtra("design_preview", false))
         if (intent.action == NearbyPairingWatchService.ACTION_OPEN_PAIRING) pairFromNotification.value = true
-        setContent { AirPodsApp(preview, pairingPreview, pairFromNotification, overlayPreview) }
+        setContent { AirPodsApp(preview, pairingPreview, pairFromNotification, overlayPreview, foregroundGeneration) }
     }
 }
 private enum class Screen { OVERVIEW, ADAPTIVE, ACCESSIBILITY, ABOUT }
@@ -86,7 +91,8 @@ private fun bondedAirPods(context: android.content.Context, includeAll: Boolean 
 
 @Composable
 private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
-                       pairFromNotification: MutableState<Boolean>, overlayPreview: Boolean) {
+                       pairFromNotification: MutableState<Boolean>, overlayPreview: Boolean,
+                       foregroundGeneration: Int) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val controller = remember { AapController.instance().also { it.initialize(context) } }
     val scope = rememberCoroutineScope()
@@ -94,6 +100,16 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
     var permission by remember { mutableStateOf(preview || context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) }
     val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { permission = it }
     var selected by remember { mutableStateOf(prefs.getString("bond_address", null)) }
+    val motoIdentitySupported = !preview && MotoBluetoothIdentity.supported
+    var motoIdentityEnabled by remember { mutableStateOf(prefs.getBoolean(MotoBluetoothIdentity.PREF, false)) }
+    var motoIdentityStatus by remember { mutableStateOf("Requires temporary root and an approved AirPods Max 2.") }
+    LaunchedEffect(motoIdentityEnabled, foregroundGeneration, selected, permission) {
+        if (motoIdentitySupported && motoIdentityEnabled && permission && selected != null) {
+            motoIdentityStatus = "Checking Apple Bluetooth identity…"
+            val address = selected
+            motoIdentityStatus = withContext(Dispatchers.IO) { MotoBluetoothIdentity.apply(context, address) }
+        }
+    }
     var pendingIdentity by remember { mutableStateOf<String?>(null) }
     var identityVersion by remember { mutableIntStateOf(0) }
     var bonds by remember { mutableStateOf<List<BondOption>>(emptyList()) }
@@ -449,6 +465,11 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
                             } })
                         Screen.ABOUT -> AboutPage(
                             device, finish, observedColorCode, colorScanMessage,
+                            motoIdentitySupported, motoIdentityEnabled, motoIdentityStatus,
+                            onMotoIdentityChanged = { enabled ->
+                                prefs.edit().putBoolean(MotoBluetoothIdentity.PREF, enabled).apply()
+                                motoIdentityEnabled = enabled
+                            },
                             onChangeHeadset = {
                                 controller.stop()
                                 selected = null
@@ -671,6 +692,8 @@ private fun Overview(
 
 @Composable private fun AboutPage(
     d: DeviceState, finish: AirPodsFinish, colorCode: Int, colorScanMessage: String,
+    motoIdentitySupported: Boolean, motoIdentityEnabled: Boolean, motoIdentityStatus: String,
+    onMotoIdentityChanged: (Boolean) -> Unit,
     onChangeHeadset: () -> Unit,
     onSelectFinish: (AirPodsFinish) -> Unit, onDetect: () -> Unit
 ) {
@@ -711,6 +734,18 @@ private fun Overview(
     SectionCaption("DEVICE SELECTION")
     Group {
         NavRow("Change AirPods Max 2", "Select another paired headset", onClick = onChangeHeadset)
+    }
+    if (motoIdentitySupported) {
+        SectionCaption("MOTO · EXPERIMENTAL")
+        Group {
+            IosSwitchRow(
+                "Apply Apple Bluetooth identity",
+                if (motoIdentityEnabled) motoIdentityStatus
+                else "Apply on app open with root. Bluetooth restarts briefly.",
+                motoIdentityEnabled, enabled = true,
+                onCheckedChange = onMotoIdentityChanged
+            )
+        }
     }
     SectionCaption("PRIVACY")
     Group {
