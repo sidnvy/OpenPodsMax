@@ -183,3 +183,16 @@ test_smart_routing = executable('test-smart-routing',
     include_directories: include_directories('src'),
     dependencies: [glib_dep, bluetooth_dep])
 test('smart-routing', test_smart_routing)
+
+reconnect_sources = []
+foreach source : sources
+    if source != files('src/main.c')[0]
+        reconnect_sources += source
+    endif
+endforeach
+test_main_reconnect = executable('test-main-reconnect',
+    files('tests/test_main_reconnect.c') + reconnect_sources,
+    include_directories: include_directories('src'),
+    dependencies: [glib_dep, gio_dep, gio_unix_dep, bluetooth_dep],
+    link_args: ['-Wl,--wrap=bt_connection_connect'])
+test('main-reconnect', test_main_reconnect)

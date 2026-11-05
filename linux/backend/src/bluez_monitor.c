@@ -820,6 +820,7 @@ static BluezDeviceInfo *find_unique_paired_target(BluezMonitor *monitor,
                                                    uint16_t ble_model,
                                                    unsigned int *match_count)
 {
+    const char *selected = g_getenv("OPENPODS_HANDOFF_HEADSET_MAC");
     uint16_t expected_product = ble_airpods_bluez_product_id(ble_model);
     BluezDeviceInfo *target = NULL;
     unsigned int count = 0;
@@ -829,7 +830,8 @@ static BluezDeviceInfo *find_unique_paired_target(BluezMonitor *monitor,
     g_hash_table_iter_init(&iter, monitor->paired_devices);
     while (g_hash_table_iter_next(&iter, NULL, &value)) {
         const BluezDeviceInfo *info = value;
-        if (!info->paired || info->connected ||
+        if (!selected || !info->address || g_ascii_strcasecmp(selected, info->address) ||
+            !info->paired || info->connected ||
             info->vendor_id != APPLE_COMPANY_ID ||
             info->product_id != expected_product ||
             g_hash_table_contains(monitor->connect_in_flight,

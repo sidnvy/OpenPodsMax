@@ -17,6 +17,7 @@ def exercise(profile="a2dp-sink-sbc", sink=SINK, pause_fail=False, resume_fail=F
             return SimpleNamespace(stdout=json.dumps([{"name":"bluez_card.00_11_22_33_44_55","active_profile":profile}]))
         if argv[1:]==["list","sinks","short"]:
             return SimpleNamespace(stdout="7\t"+sink+"\tPipeWire\n")
+        if argv[1:]==["-f","json","list","sink-inputs"]: return SimpleNamespace(stdout="[]")
         assert argv[:3]==["pactl","suspend-sink",SINK],argv
         if argv[-1]=="1" and pause_fail: raise subprocess.TimeoutExpired(argv,0.8)
         if argv[-1]=="0" and resume_fail: raise subprocess.CalledProcessError(1,argv)
@@ -39,3 +40,25 @@ for kwargs in ({"pause_fail":True},{"interrupted":True}):
 commands,error=exercise(resume_fail=True);assert error
 assert sum(c==["pactl","suspend-sink",SINK,"0"] for c in commands)==2
 print("PASS A2DP-only selection, exact target, bounded operations, timeout/cancel restoration and resume retry")
+
+for fail in (False,True):
+    commands=[]
+    def run(argv, **kwargs):
+        commands.append(argv)
+        if argv[1:]==["-f","json","list","sink-inputs"]:
+            return SimpleNamespace(stdout=json.dumps([
+                {"index":1,"sink":7,"corked":False},
+                {"index":2,"sink":7,"corked":True},
+                {"index":3,"sink":8,"corked":False}]))
+        if argv[1]=="load-module": return SimpleNamespace(stdout="99\n")
+        if fail and argv[1]=="move-sink-input" and argv[-1]!=SINK:
+            raise subprocess.TimeoutExpired(argv,0.8)
+        return SimpleNamespace(stdout="")
+    try: module.rearm_streams(SINK,"7",run,lambda _:None)
+    except subprocess.TimeoutExpired:
+        assert fail
+    moves=[c for c in commands if c[1]=="move-sink-input"]
+    assert all(c[2]=="1" for c in moves),moves
+    assert ["pactl","move-sink-input","1",SINK] in moves
+    assert commands[-1]==["pactl","unload-module","99"]
+print("PASS active target-stream graph recovery and cleanup after a timed-out move")

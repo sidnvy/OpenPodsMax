@@ -104,7 +104,7 @@ def main():
     ]
     runtime = config/"runtime/earport/daemon.conf"
     if not runtime.exists():
-        files.append((runtime, b"[Settings]\near_pause_mode=0\nhandoff_enabled=true\nauto_connect_on_wear=false\ndisconnect_on_removal=false\n", 0o600))
+        files.append((runtime, b"[Settings]\near_pause_mode=0\nhandoff_enabled=true\nauto_connect_on_wear=true\ndisconnect_on_removal=false\n", 0o600))
     backup = data/"backups"/(str(time.time_ns()))
     backup.mkdir(parents=True, mode=0o700)
     manifest = []

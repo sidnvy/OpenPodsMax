@@ -28,8 +28,11 @@ the rollback manifest directory. It does not start or enable a service, alter
 Bluetooth identity, or change bonds. Repeated installation preserves the same
 sidebar injection. Other desktop customizations are retained.
 
-The startup configuration keeps Linux wear-pause disabled to preserve the
-existing test setup; select Either earcup in the panel to enable it. Linux-only
+New installations enable wear-based reconnection for the exact selected bond.
+Nearby wear observations are confirmed before connecting; scanning stops while
+the device is connected. Existing installations retain their explicit policy.
+
+The startup configuration keeps Linux wear-pause disabled; select Either earcup in the panel to enable it. Linux-only
 playback policy is separate from the Android setting. No listening settings are
 automatically applied from a new profile.
 
@@ -58,7 +61,11 @@ instead of widening the panel.
 The event-driven `openpodsmaxctl watch` bridge watches the session D-Bus service;
 it does not poll or carry audio. Setting requests await headphone readback and
 time out honestly. A successful D-Bus method return is not hardware confirmation.
-Unavailable settings remain unknown/disabled. `take` requests ownership without
+For settings that do not send an unsolicited acknowledgement, the daemon waits
+for the write to settle and refreshes only the auxiliary AAP socket, keeping the
+Bluetooth audio link and visible device identity. Repeated writes are rejected
+while that verification is pending. Unavailable settings remain unknown/disabled.
+`take` requests ownership without
 autoplay. Calls, unclassified sources, an unconfigured remote peer, missing wear
 state and disconnected links cannot be claimed.
 
@@ -68,25 +75,31 @@ Upstream licensing/provenance is recorded in [UPSTREAM.md](UPSTREAM.md).
 
 ## Acceptance limits
 
-These are investigation builds, not a public release. Native dual-host switching
-currently depends on the previously tested Apple identities and Android handoff
-candidate. The Moto identity uses temporary root and does not survive a reboot.
-This installer does not supply root, change identity or re-pair anything.
+This is an investigation build. On the tested Moto Edge 70 / AirPods Max 2 /
+Linux laptop, the owner confirmed both directions of audio handoff before and
+again after a full phone reboot using the existing bonds. The temporary root
+and runtime Apple DID were absent after reboot, independently confirmed by SDP.
+This demonstrates that the existing setup can survive that reboot; it does not
+establish a rootless first-time setup or a guarantee after a reset or re-pair.
+The installer does not supply root, alter identity or change bonds.
 
-Noise cancellation, transparency and adaptive mode have been confirmed by Max 2
-readback. Conversation awareness is exposed with pending/timeout handling but its
-write readback remains unconfirmed in this session. Do not mark it hardware PASS.
-The first test-player SIGSTOP experiment was invalid for audio resume. Further
-real testing found that after the phone yields, Linux may keep a running stream
-without issuing a new A2DP start. The daemon now performs one bounded restart of
-the exact selected A2DP output after an ownership request reports idle, with fresh
-wear/playback checks and a six-second claim window. It never restarts a call
-profile. The helper restores the output even after timeout/cancellation.
+Max 2 listening modes and conversation awareness have real readback. Both
+earcups paused and resumed audible playback on Moto and Linux. A real Moto call
+and microphone stayed active during Linux playback and a rejected manual claim.
+The Linux daemon and Android playback service recovered after an abnormal process
+exit without opening the app; phone boot recovery was automatic but delayed.
 
-With that recovery installed, the owner confirmed audible Moto → Linux and
-Linux → Moto switching, with final playback on Moto. A separate manual recovery
-check confirmed Digital Crown volume remained functional. These results cover
-this Max 2/Moto/laptop session, not all media players or lifecycle conditions.
-Calls, suspend/resume, reboot recovery and broad Linux player compatibility still
-need acceptance testing. Spatial audio/head tracking and microphone upgrades are
-outside this control panel implementation.
+Real mpv output and resume were tested through PulseAudio and native PipeWire,
+with an actual Chrome media session used as a second player. If a phone yields
+but Linux remains silent, the daemon can restart the selected A2DP output and
+reconnect its active streams through a temporary silent sink. Both operations
+are bounded and scoped to the selected headphones, never a call profile.
+
+The laptop's AAP controls recovered after actual suspend, but Moto music paused
+in one suspend run. Closing just the Linux AAP socket or classic link did not
+reproduce it. Automatic Moto connection after removing the headphones from the
+Smart Case failed in an isolated test. Android enhanced Settings metadata was
+also observed reverting to the default outside a reboot, although the restored
+registration survived the tested reboot. These remain release blockers for an
+unqualified seamless experience. Spatial audio/head tracking and microphone
+upgrades are outside this control panel implementation.

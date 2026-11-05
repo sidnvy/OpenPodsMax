@@ -13,8 +13,13 @@ Singleton {
     property string error: ""
     readonly property bool busy: pendingProperty !== "" || setter.running
 
+    function confirmed(property, expected) {
+        if (property === "NoiseControlMode" && state.NoiseControlKnown !== true) return false;
+        if (property === "ConversationalAwareness" && state.ConversationKnown !== true) return false;
+        return state[property] === expected;
+    }
     function request(command, value, property, expected) {
-        if (busy || !connected || state[property] === expected) return;
+        if (busy || !connected || confirmed(property, expected)) return;
         error = "";
         pendingProperty = property;
         pendingValue = expected;
@@ -28,7 +33,7 @@ Singleton {
             if (pendingProperty !== "") error = "Headphones disconnected. Reconnect to try again.";
             pendingProperty = "";
             expiry.stop();
-        } else if (pendingProperty !== "" && state[pendingProperty] === pendingValue) {
+        } else if (pendingProperty !== "" && confirmed(pendingProperty, pendingValue)) {
             pendingProperty = "";
             expiry.stop();
         }

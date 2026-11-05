@@ -21,7 +21,7 @@
 typedef void (*DbusNoiseControlCallback)(NoiseControlMode mode, void *user_data);
 
 /* Callback for conversational awareness change request */
-typedef void (*DbusConvAwarenessCallback)(bool enabled, void *user_data);
+typedef bool (*DbusConvAwarenessCallback)(bool enabled, void *user_data);
 
 /* Callback for adaptive noise level change request */
 typedef void (*DbusAdaptiveLevelCallback)(int level, void *user_data);

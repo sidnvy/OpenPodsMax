@@ -238,8 +238,11 @@ static void handle_method_call(GDBusConnection *connection G_GNUC_UNUSED,
 
         g_message("D-Bus: SetConversationalAwareness(%s)", enabled ? "true" : "false");
 
-        if (service->conv_awareness_callback) {
-            service->conv_awareness_callback(enabled, service->conv_awareness_user_data);
+        if (!service->conv_awareness_callback ||
+            !service->conv_awareness_callback(enabled, service->conv_awareness_user_data)) {
+            g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR,
+                G_DBUS_ERROR_FAILED, "Conversation control unavailable or readback in progress");
+            return;
         }
 
         g_dbus_method_invocation_return_value(invocation, NULL);
@@ -649,6 +652,10 @@ void dbus_service_emit_all_properties_changed(DbusService *service)
 {
     static const char *const property_names[] = {
         "Connected",
+        "AudioSource",
+        "HandoffEnabled",
+        "NoiseControlKnown",
+        "ConversationKnown",
         "DeviceName",
         "DeviceAddress",
         "DeviceModel",

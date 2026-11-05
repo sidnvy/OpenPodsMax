@@ -58,3 +58,13 @@ After fresh bonds under both Apple identities, Moto A2DP/HFP and Linux A2DP/AAP 
 The app now handles that known forwarded release request on a separate worker, guarded by the same approved bond, current AAP generation, selected headset media route and normal audio mode. It clears pending app-owned wear resume so rewear does not undo a handoff. The initial integrated candidate replied without pausing music and failed the audible test; the corrected same-key investigation APK added guarded PAUSE and passed the owner's final **both directions, ending on Moto music** check. The separate diagnostic phone receiver was stopped and removed, and the app's foreground wear service was independently verified active.
 
 [Linux diagnostic adapter and limitations](../tools/native-handoff/README.md). In this session it was deployed as a running user service without login autostart. Phone temporary root and the runtime property do not survive a full reboot. Call priority, suspend/resume, boot recovery and long-duration stability are **not hardware-accepted**. This is an experimental installed test, not a new public release or a rootless solution. Raw kernel, bond and device traces remain private outside the public tree.
+
+## Follow-up acceptance
+
+The integrated Linux daemon replaces the diagnostic preload adapter. During a
+subsequent full Moto reboot, the existing bonds remained intact, temporary root
+was gone, and external SDP reported the original vendor 0x001D. The owner still
+heard both directions of native handoff without re-pairing or reapplying the
+identity. This observation supersedes the assumption that root must be reapplied
+after every reboot for these existing bonds. It does not establish rootless
+initial setup or behavior after re-pairing. See [Linux acceptance limits](../linux/README.md#acceptance-limits).

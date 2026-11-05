@@ -77,6 +77,8 @@ typedef struct {
      * MPRIS Playing edge may claim the headphones again. */
     HandoffPolicy handoff_policy;
     gint64 last_audio_claim_time;
+    bool control_refresh;
+    guint control_refresh_timeout_id;
     bool transport_rearm_pending;
     guint transport_rearm_timeout_id;
     GSubprocess *transport_rearm_process;
@@ -997,6 +999,46 @@ static void cancel_reconnect(void)
     app.reconnect_attempts = 0;
 }
 
+/* Auxiliary AAP reconnect: some settings are only included in the initial
+ * snapshot, not echoed after a successful write. Keep the BlueZ audio link and
+ * visible device identity while invalidating setting validity until readback. */
+static void cancel_control_refresh(void)
+{
+    app.control_refresh = false;
+    if (app.control_refresh_timeout_id) {
+        g_source_remove(app.control_refresh_timeout_id);
+        app.control_refresh_timeout_id = 0;
+    }
+}
+
+static gboolean control_refresh_deadline(gpointer data)
+{
+    (void)data;
+    app.control_refresh_timeout_id = 0;
+    app.control_refresh = false;
+    if (!app.bt_conn || !bt_connection_is_connected(app.bt_conn)) {
+        airpods_state_reset(&app.state);
+        dbus_service_emit_all_properties_changed(app.dbus_service);
+        g_warning("Control readback refresh did not reconnect within its window");
+    }
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean begin_control_refresh(gpointer data)
+{
+    (void)data;
+    app.control_refresh_timeout_id = 0;
+    if (!app.bluez_connected || !app.bt_conn ||
+        !bt_connection_is_connected(app.bt_conn)) return G_SOURCE_REMOVE;
+    app.control_refresh = true;
+    app.state.conversation_known = false;
+    app.state.noise_control_known = false;
+    dbus_service_emit_all_properties_changed(app.dbus_service);
+    app.control_refresh_timeout_id = g_timeout_add(4000, control_refresh_deadline, NULL);
+    bt_connection_disconnect(app.bt_conn);
+    return G_SOURCE_REMOVE;
+}
+
 static void on_bt_state_changed(BluetoothState state, const char *error, void *user_data)
 {
     (void)user_data;
@@ -1025,11 +1067,14 @@ static void on_bt_state_changed(BluetoothState state, const char *error, void *u
                                                   send_handshake_timeout_cb,
                                                   NULL);
 
+        /* The control-only refresh retains the already observed model/name. */
+        bool refreshing = app.control_refresh && app.state.connected;
+        cancel_control_refresh();
         /* Update state */
         airpods_state_set_device(&app.state,
                                   app.pending_name,
                                   app.pending_address,
-                                  AIRPODS_MODEL_UNKNOWN);  /* Model detected later via metadata */
+                                  refreshing ? app.state.model : AIRPODS_MODEL_UNKNOWN);
 
         /* Load and apply saved device profile */
         apply_device_profile(app.pending_address);
@@ -1052,6 +1097,11 @@ static void on_bt_state_changed(BluetoothState state, const char *error, void *u
         reset_audio_handoff_state();
         reset_aap_initialization();
 
+        if (app.control_refresh && app.bluez_connected) {
+            cancel_reconnect();
+            app.reconnect_timeout_id = g_timeout_add(200, reconnect_timeout_cb, NULL);
+            break;
+        }
         if (app.state.connected) {
             dbus_service_emit_device_disconnected(app.dbus_service,
                                                    app.state.device_address,
@@ -1259,9 +1309,9 @@ static void connect_to_airpods(const char *address, const char *name)
         bt_connection_set_state_callback(app.bt_conn, on_bt_state_changed, NULL);
     }
 
-    g_message("Connecting to AirPods: %s (%s)", name, address);
+    g_message("Connecting to AirPods: %s (%s)", app.pending_name, app.pending_address);
 
-    if (!bt_connection_connect(app.bt_conn, address)) {
+    if (!bt_connection_connect(app.bt_conn, app.pending_address)) {
         g_warning("Failed to initiate connection");
     }
 }
@@ -1356,6 +1406,7 @@ static void on_media_playback_stopped(void *user_data)
 static void on_bluez_device_connected(const BluezDeviceInfo *device, void *user_data)
 {
     (void)user_data;
+    if (!airpods_address_equal(g_getenv("OPENPODS_HANDOFF_HEADSET_MAC"), device->address)) return;
     g_message("BlueZ: AirPods connected - %s (%s)", device->name, device->address);
 
     if (device->address == NULL || device->address[0] == '\0')
@@ -1430,6 +1481,7 @@ static void on_bluez_device_disconnected(const BluezDeviceInfo *device, void *us
         return;
     }
 
+    cancel_control_refresh();
     char *disconnected_address = g_strdup(app.pending_address);
     bool fully_removed = app.last_wear_state_valid &&
         wear_policy_fully_removed(app.last_left_in_ear,
@@ -1547,24 +1599,28 @@ static void on_set_noise_control(NoiseControlMode mode, void *user_data)
     }
 }
 
-static void on_set_conv_awareness(bool enabled, void *user_data)
+static bool on_set_conv_awareness(bool enabled, void *user_data)
 {
     (void)user_data;
 
     if (!app.bt_conn || !bt_connection_is_connected(app.bt_conn)) {
         g_warning("Cannot set conversational awareness: not connected");
-        return;
+        return false;
     }
+
+    if (app.control_refresh || app.control_refresh_timeout_id || !app.state.conversation_known)
+        return false;
+    if (app.state.conversational_awareness == enabled) return true;
 
     uint8_t packet[AAP_CONTROL_CMD_SIZE];
     aap_build_conv_awareness_cmd(enabled, packet);
     if (bt_connection_send(app.bt_conn, packet, AAP_CONTROL_CMD_SIZE) !=
         (ssize_t)AAP_CONTROL_CMD_SIZE) {
         g_warning("Failed to set AirPods conversational awareness");
-        return;
+        return false;
     }
-
-
+    app.control_refresh_timeout_id = g_timeout_add(1200, begin_control_refresh, NULL);
+    return true;
 }
 
 static void on_set_adaptive_level(int level, void *user_data)
@@ -1717,6 +1773,7 @@ static gboolean on_sigterm(gpointer user_data)
 static void cleanup(void)
 {
     g_message("Cleaning up...");
+    cancel_control_refresh();
     cancel_transport_rearm();
 
     app.bluez_connected = false;
