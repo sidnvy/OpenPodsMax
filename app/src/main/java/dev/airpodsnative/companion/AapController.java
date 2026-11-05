@@ -24,8 +24,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 
 /** Minimal P0 implementation of CAPod GPLv3 AAP L2CAP and ANC state wire protocol.
- * Real state only; no optimistic UI value. In this first iteration, connection
- * is read-only. See CAPod's DefaultAapDeviceProfile / AapConnection.
+ * Real readbacks and guarded settings/remote-handoff responses.
+ * See CAPod's DefaultAapDeviceProfile / AapConnection.
  */
 public final class AapController {
     public static final String TAG="AirPodsAAP";
@@ -38,6 +38,7 @@ public final class AapController {
     public interface Listener {void onMode(int index);}
     public interface FeatureListener {void onFeature(int controlId, int value);}
     public interface SessionListener {void onConnectionChanged(boolean active);}
+    public interface HandoffListener {void onRemoteYield();}
     public interface WearListener {void onWear(String address,long generation,int primary,int secondary);}
     private final CopyOnWriteArrayList<WearListener> wearListeners=new CopyOnWriteArrayList<>();
     private int wearPrimary=-1,wearSecondary=-1;
@@ -82,6 +83,13 @@ public final class AapController {
         Thread thread = new Thread(r, "max2-reconnect");thread.setDaemon(true);return thread;
     });
     private ScheduledFuture<?> retry;
+    private final ScheduledExecutorService handoffExecutor=Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread thread=new Thread(r,"max2-handoff");thread.setDaemon(true);return thread;
+    });
+    private final java.util.concurrent.atomic.AtomicBoolean handoffPending=new java.util.concurrent.atomic.AtomicBoolean();
+    private final CopyOnWriteArrayList<HandoffListener> handoffListeners=new CopyOnWriteArrayList<>();
+    public void addHandoffListener(HandoffListener listener){if(listener!=null)handoffListeners.addIfAbsent(listener);}
+    public void removeHandoffListener(HandoffListener listener){handoffListeners.remove(listener);}
     private volatile Context applicationContext;
     private boolean routeMonitorStarted;
     private volatile AudioManager connectionAudio;
@@ -362,6 +370,10 @@ public final class AapController {
                         }
                     }
                 }
+                if(HandoffRequest.release(buf,n) && handoffPending.compareAndSet(false,true)){
+                    final BluetoothSocket requestedSocket=local;
+                    handoffExecutor.execute(()->yieldToRemote(requestedSocket,token,address));
+                }
                 // Read-only diagnostics for physical acceptance. No audio or
                 // playback side effects and no raw payload/device identifiers.
                 if(AapFrameValidator.message(buf,n,0x4b)) {
@@ -438,6 +450,34 @@ public final class AapController {
             }
             Log.i(TAG,"DISCONNECTED");
         }
+    }
+    private void yieldToRemote(BluetoothSocket requestedSocket,long token,String address){
+        try {
+            Context app=applicationContext;AudioManager audio=connectionAudio;
+            synchronized(this){
+                if(!policy.current(token,address) || socket!=requestedSocket || !connected
+                    || !hasAudioConnection(address))return;
+            }
+            // A forwarded media request must never interrupt a call or a user-selected speaker route.
+            if(app==null || audio==null || audio.getMode()!=AudioManager.MODE_NORMAL
+                || !WearPauseService.mediaRouteMatches(audio,address)
+                || !DeviceIdentityStore.trustedAndBonded(app,address)){
+                Log.i(TAG,"HANDOFF_YIELD_SKIPPED_PRECONDITION");return;
+            }
+            if(!writeCommand(requestedSocket,token,new byte[]{4,0,4,0,9,0,6,0,0,0,0}))return;
+            Log.i(TAG,"HANDOFF_OWNS_FALSE_SENT");
+            // Stop only the active media routed to this headset; do not arm wear auto-resume.
+            if(audio.getMode()==AudioManager.MODE_NORMAL && audio.isMusicActive()
+                && WearPauseService.mediaRouteMatches(audio,address) && isCurrentSession(address,token)){
+                long now=android.os.SystemClock.uptimeMillis();
+                audio.dispatchMediaKeyEvent(new android.view.KeyEvent(now,now,android.view.KeyEvent.ACTION_DOWN,android.view.KeyEvent.KEYCODE_MEDIA_PAUSE,0));
+                audio.dispatchMediaKeyEvent(new android.view.KeyEvent(now,now,android.view.KeyEvent.ACTION_UP,android.view.KeyEvent.KEYCODE_MEDIA_PAUSE,0));
+                Log.i(TAG,"HANDOFF_MEDIA_PAUSE_REQUESTED");
+            }
+            for(HandoffListener listener:handoffListeners)try{listener.onRemoteYield();}
+                catch(RuntimeException ex){Log.w(TAG,"handoff listener",ex);}
+        }catch(Exception ex){Log.w(TAG,"HANDOFF_YIELD_FAILED="+ex.getClass().getSimpleName());}
+        finally{handoffPending.set(false);}
     }
     private static int u8(byte[] v,int i){return v[i]&255;}
     private static int modeFromWire(int v){

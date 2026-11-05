@@ -50,6 +50,9 @@ public final class WearPauseService extends Service {
         Log.i(AapController.TAG,connected?"WEAR_AAP_SESSION_CONNECTED":"WEAR_AAP_SESSION_DISCONNECTED");
         reset();
     });
+    private final AapController.HandoffListener handoff=()->handler.post(()->{
+        if(active){reset();Log.i(AapController.TAG,"WEAR_RESUME_CLEARED_FOR_HANDOFF");}
+    });
     private SharedPreferences prefs(){return getSharedPreferences("selected_airpods",MODE_PRIVATE);}
     private void reset(){handler.removeCallbacks(check);handler.removeCallbacks(resumeCheck);policy.reset();if(resume!=null)resume.clear();generation=-1;}
     private final Runnable resumeCheck=new Runnable(){public void run(){
@@ -86,7 +89,7 @@ public final class WearPauseService extends Service {
         try {
             if(Build.VERSION.SDK_INT>=34)startForeground(NOTIFICATION,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
             else startForeground(NOTIFICATION,notification);
-            active=true;controller.addWearListener(wear);controller.addSessionListener(session);
+            active=true;controller.addWearListener(wear);controller.addSessionListener(session);controller.addHandoffListener(handoff);
             controller.connectReadOnlyAsync(target);
             Log.i(AapController.TAG,"WEAR_PAUSE_SERVICE_ACTIVE");
         }catch(RuntimeException ex){
@@ -146,7 +149,7 @@ public final class WearPauseService extends Service {
     }
     @Override public void onDestroy(){
         active=false;handler.removeCallbacksAndMessages(null);policy.reset();resume.clear();
-        controller.removeWearListener(wear);controller.removeSessionListener(session);
+        controller.removeWearListener(wear);controller.removeSessionListener(session);controller.removeHandoffListener(handoff);
         stopForeground(STOP_FOREGROUND_REMOVE);super.onDestroy();
     }
 }
