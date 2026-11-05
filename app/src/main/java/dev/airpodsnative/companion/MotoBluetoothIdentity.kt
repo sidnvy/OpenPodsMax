@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioManager
 import android.os.Build
 import android.system.Os
+import android.util.Log
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -26,27 +27,35 @@ internal object MotoBluetoothIdentity {
             return "Run GhostLock and grant OpenPodsMax root access in KernelSU."
         }
         val audio = context.getSystemService(AudioManager::class.java)
-        if (audio == null || audio.mode != AudioManager.MODE_NORMAL || audio.isMusicActive) {
-            return "Pause playback and end any call, then reopen OpenPodsMax."
-        }
-
         return try {
-            val process = ProcessBuilder("/system/bin/su", "-c", script)
-                .redirectOutput(File("/dev/null"))
-                .redirectError(File("/dev/null"))
-                .start()
-            if (!process.waitFor(45, TimeUnit.SECONDS)) {
-                // The root shell can still be restoring Bluetooth. Wait for it before any retry.
-                process.waitFor()
-                return "The operation took longer than expected. Check Bluetooth before retrying."
+            repeat(2) { attempt ->
+                if (audio == null || audio.mode != AudioManager.MODE_NORMAL || audio.isMusicActive) {
+                    return "Pause playback and end any call, then reopen OpenPodsMax."
+                }
+                val process = ProcessBuilder("/system/bin/su", "-c", script)
+                    .redirectOutput(File("/dev/null"))
+                    .redirectError(File("/dev/null"))
+                    .start()
+                if (!process.waitFor(45, TimeUnit.SECONDS)) {
+                    // Let the root shell finish restoring Bluetooth before another operation.
+                    process.waitFor()
+                    return "The operation took longer than expected. Check Bluetooth before retrying."
+                }
+                val code = process.exitValue()
+                Log.i("MotoBluetoothIdentity", "Apply attempt ${attempt + 1} exited with $code")
+                if (attempt == 0 && code in 15..17) {
+                    Thread.sleep(2_000)
+                    return@repeat
+                }
+                return when (code) {
+                    0 -> "Apple Vendor ID set for this boot. Verify switching on both devices."
+                    10, 1 -> "Grant OpenPodsMax root access in KernelSU."
+                    13 -> "End the call, then reopen OpenPodsMax."
+                    14 -> "Turn on Bluetooth, then reopen OpenPodsMax."
+                    else -> "Couldn’t apply the Apple Bluetooth identity. Check Bluetooth before retrying."
+                }
             }
-            when (process.exitValue()) {
-                0 -> "Apple Vendor ID set for this boot. Verify switching on both devices."
-                10, 1 -> "Grant OpenPodsMax root access in KernelSU."
-                13 -> "End the call, then reopen OpenPodsMax."
-                14 -> "Turn on Bluetooth, then reopen OpenPodsMax."
-                else -> "Couldn’t apply the Apple Bluetooth identity. Check Bluetooth before retrying."
-            }
+            error("Identity retry limit exceeded")
         } catch (_: IOException) {
             "Temporary root is unavailable."
         } catch (_: InterruptedException) {
@@ -73,14 +82,15 @@ internal object MotoBluetoothIdentity {
         }
         trap recover EXIT
         setprop "${'$'}property" 0x004C
-        cmd bluetooth_manager disable >/dev/null
+        cmd bluetooth_manager disable >/dev/null || exit 15
         for attempt in 1 2 3 4 5 6 7 8 9 10; do
             case "$(state)" in OFF|BLE_ON) break;; esac
             sleep 1
         done
         case "$(state)" in OFF|BLE_ON) ;; *) exit 15;; esac
         sleep 2
-        cmd bluetooth_manager enable >/dev/null
+        setprop "${'$'}property" 0x004C
+        cmd bluetooth_manager enable >/dev/null || exit 16
         for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
             [ "$(state)" != ON ] || break
             sleep 1
