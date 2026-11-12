@@ -133,7 +133,8 @@ internal object AppleBluetoothIdentity {
                 18 -> "The phone restarted during the operation. Try again."
                 19 -> "This Bluetooth stack does not support this method."
                 20 -> "Bluetooth identity changed during the operation. Check it before retrying."
-                22 -> "The temporary Bluetooth config could not be verified. Recovery information was kept."
+                23 -> "The Bluetooth service could not be safely refreshed. Check Bluetooth before retrying."
+                22 -> "The temporary Bluetooth config could not be verified."
                 21 -> "Another identity change is still finishing. Wait before retrying."
                 else -> "Couldn’t confirm the identity change. Check Bluetooth before retrying."
             }

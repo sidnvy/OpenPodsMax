@@ -121,3 +121,26 @@ cfg_verify() {
         [ "$(cfg_in "$pid" sha256sum "$config_target" | awk '{print $1}')" = "$expected" ] || return 1
     done
 }
+# Legacy stacks can cache DID records for the life of the Bluetooth process.
+# Only the reserved Bluetooth UID and exact platform process names may be refreshed.
+cfg_restart_processes() {
+    for pid in $(pidof com.android.bluetooth com.google.android.bluetooth 2>/dev/null || true); do
+        case "$pid" in ''|*[!0-9]*) return 1;; esac
+        [ "$pid" -gt 1 ] || return 1
+        if [ ! -r "/proc/$pid/status" ]; then
+            current=" $(pidof com.android.bluetooth com.google.android.bluetooth 2>/dev/null || true) "
+            case "$current" in *" $pid "*) return 1;; *) continue;; esac
+        fi
+        uid=$(awk '/^Uid:/ {print $2}' "/proc/$pid/status")
+        [ "$uid" = 1002 ] || return 1
+        name=$(cat "/proc/$pid/cmdline" | tr '\000' '\n' | head -n 1)
+        case "$name" in com.android.bluetooth|com.google.android.bluetooth) ;; *) return 1;; esac
+        /system/bin/kill -TERM "$pid" || return 1
+        for attempt in 1 2 3 4 5 6 7 8; do
+            current=" $(pidof com.android.bluetooth com.google.android.bluetooth 2>/dev/null || true) "
+            case "$current" in *" $pid "*) sleep 1;; *) break;; esac
+        done
+        current=" $(pidof com.android.bluetooth com.google.android.bluetooth 2>/dev/null || true) "
+        case "$current" in *" $pid "*) return 1;; esac
+    done
+}

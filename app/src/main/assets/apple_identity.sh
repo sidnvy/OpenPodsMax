@@ -96,6 +96,9 @@ recover() {
                 case "$(state)" in OFF|BLE_ON) ;; *) radio_recovered=0;; esac
             else radio_recovered=0; fi
         fi
+        if [ "$config_mode" = enabled ] && [ "$config_recovered" = 1 ]; then
+            cfg_restart_processes || radio_recovered=0
+        fi
         cmd bluetooth_manager enable >/dev/null 2>&1 || radio_recovered=0
         for attempt in 1 2 3 4 5 6 7 8; do [ "$(state)" != ON ] || break; sleep 1; done
         [ "$(state)" = ON ] || radio_recovered=0
@@ -124,6 +127,7 @@ case "$(state)" in OFF|BLE_ON) ;; *) exit 15;; esac
 sleep 2
 # Some stacks reset properties during shutdown; recheck instead of overwriting it.
 [ "$(getprop "$vendor_key")" = "$desired_vendor" ] && [ "$(getprop "$source_key")" = "$desired_source" ] || exit 20
+if [ "$config_mode" != none ]; then cfg_restart_processes || exit 23; fi
 cmd bluetooth_manager enable >/dev/null || exit 16
 for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
     [ "$(state)" != ON ] || break

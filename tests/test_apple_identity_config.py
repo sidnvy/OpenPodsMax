@@ -22,6 +22,13 @@ if name=='nsenter':
   views[pid]=target;d['events'].append(['umount',pid]);save();sys.exit(0)
  cmd=[current if x==target else x for x in cmd]
  sys.exit(subprocess.run(['/usr/bin/'+cmd[0],*cmd[1:]]).returncode)
+if name=='cat':
+ if a[0].startswith('/proc/') and a[0].endswith('/cmdline'): print('com.android.bluetooth');sys.exit(0)
+ sys.exit(subprocess.run(['/usr/bin/cat',*a]).returncode)
+if name=='kill':
+ assert a[0]=='-TERM' and a[1]==d['alive'][-1]
+ if fail('fail_signal'):sys.exit(1)
+ d['dead_bt_pid']=True;d['events'].append(['signal',a[1]]);save();sys.exit(0)
 if name=='readlink':
  pid=a[0].split('/')[2]
  if pid not in d.get('alive',['100','999']): sys.exit(1)
@@ -35,22 +42,25 @@ class ConfigTransactionTests(IdentityTransactionTests):
         super().setUp()
         self.target=self.base/'bt_did.conf';self.original='[DID1]\nprimaryRecord = true\nvendorId = 0x0075\n#vendorIdSource = 0x0001\nproductId = 0x0100\nversion = 0x0201\n[DID2]\n#vendorId = 0x000F\n'
         self.target.write_text(self.original)
+        self.proc=self.base/'proc';self.proc.mkdir()
+        for pid in range(999,1020):
+            folder=self.proc/str(pid);folder.mkdir();(folder/'status').write_text('Uid:\t1002\t1002\t1002\t1002\n')
         self.data['props']={VENDOR:'0x0075',SOURCE:''};self.data['target']=str(self.target);self.data['alive']=['100','999']
         fake=FAKE.replace("if name=='id':",EXT+"\nif name=='id':")
-        fake=fake.replace("elif name=='pidof': print('999')", "elif name=='pidof': print(('100 '+d['alive'][-1]) if 'zygote64' in a else ('150' if 'dev.airpodsnative.companion' in a and '150' in d['alive'] else d['alive'][-1]))")
-        fake=fake.replace("elif name=='awk': print('/apex/test/libbluetooth_jni.so')", "elif name=='awk':\n if a[-1].startswith('/proc/'): print('/apex/test/libbluetooth_jni.so')\n else: sys.exit(subprocess.run(['/usr/bin/awk',*a]).returncode)")
+        fake=fake.replace("elif name=='pidof': print('999')", "elif name=='pidof': print(('100 '+d['alive'][-1]) if 'zygote64' in a else ('150' if 'dev.airpodsnative.companion' in a and '150' in d['alive'] else ('' if d.get('dead_bt_pid') else d['alive'][-1])))")
+        fake=fake.replace("elif name=='awk': print('/apex/test/libbluetooth_jni.so')", "elif name=='awk':\n if a[-1].startswith('/proc/') and a[-1].endswith('/status'): print('1002')\n elif a[-1].startswith('/proc/'): print('/apex/test/libbluetooth_jni.so')\n else: sys.exit(subprocess.run(['/usr/bin/awk',*a]).returncode)")
         fake=fake.replace("d['bt']='OFF' if op=='disable' else 'ON'", """d['bt']='OFF' if op=='disable' else 'ON'
- if op=='enable' and d.get('restart_bt'):
+ if op=='enable' and (d.get('restart_bt') or d.get('dead_bt_pid')):
   old=d['alive'][-1];new=str(int(old)+1);d['alive'][-1]=new
-  d.setdefault('views',{}).pop(old,None);d['views'][new]=d['views'].get('100',d['target'])
+  d.setdefault('views',{}).pop(old,None);d['views'][new]=d['views'].get('100',d['target']);d['dead_bt_pid']=False
  if op=='enable' and fail('terminate_after_enable'): os.kill(os.getppid(),signal.SIGTERM)""")
         self.fake.write_text(fake)
-        for name in ['nsenter','readlink','ls','chcon']:(self.bin/name).symlink_to(self.fake)
+        for name in ['nsenter','readlink','ls','chcon','cat','kill']:(self.bin/name).symlink_to(self.fake)
         helpers=SCRIPT.with_name('apple_identity_config.sh').read_text()
         # Substitute only public filesystem locations; execute the unchanged transaction logic.
         for path in ['/apex/com.android.bt/etc/bluetooth/bt_did.conf','/apex/com.android.btservices/etc/bluetooth/bt_did.conf','/system/etc/bluetooth/bt_did.conf']:
             helpers=helpers.replace(path,str(self.target))
-        self.script=self.base/'transaction.sh';self.script.write_text(helpers+'\n'+SCRIPT.read_text())
+        self.script=self.base/'transaction.sh';self.script.write_text((helpers+'\n'+SCRIPT.read_text()).replace('/system/bin/kill',str(self.bin/'kill')).replace('/proc/$pid/status',str(self.proc)+'/$pid/status'))
     def invoke(self,*args):
         self.state.write_text(json.dumps(self.data))
         env={**os.environ,'PATH':str(self.bin)+':/usr/bin:/bin','FAKE_ANDROID_STATE':str(self.state)}
@@ -83,7 +93,7 @@ class ConfigTransactionTests(IdentityTransactionTests):
         self.assertTrue(all(self.data['views'].get(p,str(self.target))==str(self.target) for p in self.data['alive']))
     def test_restore_failure_keeps_recovery_state(self):
         self.assertEqual(self.enable().returncode,0)
-        self.data['fail_umount_999']=True;r=self.disable();self.assertEqual(r.returncode,22,r.stderr)
+        self.data['fail_umount_'+self.data['alive'][-1]]=True;r=self.disable();self.assertEqual(r.returncode,22,r.stderr)
         self.assertTrue((self.base/'apple-identity-config'/'boot').exists())
         self.assertEqual(self.disable().returncode,0);self.assertFalse((self.base/'apple-identity-config').exists())
     def test_changed_patch_cannot_be_silently_unmounted(self):
@@ -92,9 +102,9 @@ class ConfigTransactionTests(IdentityTransactionTests):
         r=self.disable();self.assertEqual(r.returncode,22,r.stderr);self.assertTrue(patch.exists())
     def test_foreign_binding_is_not_unmounted(self):
         self.assertEqual(self.enable().returncode,0)
-        foreign=self.base/'foreign';foreign.write_text('unrelated config');self.data['views']['999']=str(foreign)
+        foreign=self.base/'foreign';foreign.write_text('unrelated config');current=self.data['alive'][-1];self.data['views'][current]=str(foreign)
         r=self.disable();self.assertEqual(r.returncode,22,r.stderr)
-        self.assertEqual(self.data['views']['999'],str(foreign));self.assertTrue((self.base/'apple-identity-config').exists())
+        self.assertEqual(self.data['views'][current],str(foreign));self.assertTrue((self.base/'apple-identity-config').exists())
     def test_label_failure_has_no_property_writes(self):
         self.data['fail_chcon']=True;r=self.enable();self.assertEqual(r.returncode,22,r.stderr)
         self.assertEqual(self.data['props'],{VENDOR:'0x0075',SOURCE:''});self.assertEqual(self.target.read_text(),self.original)
@@ -120,6 +130,18 @@ class ConfigTransactionTests(IdentityTransactionTests):
         self.data['views']['150']=self.data['views']['100']
         self.assertEqual(self.disable().returncode,0)
         self.assertEqual(self.data['views']['150'],str(self.target))
+    def test_bluetooth_process_refresh_is_scoped(self):
+        self.assertEqual(self.enable().returncode,0)
+        signals=[e for e in self.data['events'] if e[0]=='signal']
+        self.assertEqual(signals,[['signal','999']])
+        self.assertNotEqual(self.data['alive'][-1],'999')
+    def test_refused_process_refresh_keeps_safe_recovery(self):
+        self.data['fail_signal']=True;r=self.enable();self.assertEqual(r.returncode,23,r.stderr)
+        self.assertEqual(self.data['props'],{VENDOR:'0x0075',SOURCE:''});self.assertEqual(self.data['bt'],'ON')
+    def test_wrong_process_uid_is_never_signalled(self):
+        (self.proc/'999'/'status').write_text('Uid:\t1000\t1000\t1000\t1000\n')
+        r=self.enable();self.assertEqual(r.returncode,23,r.stderr)
+        self.assertFalse(any(e[0]=='signal' for e in self.data['events']))
     def test_config_source_and_product_fields_preserved(self):
         self.assertEqual(self.enable().returncode,0)
         patch=(self.base/'apple-identity-config'/'patched').read_text()
