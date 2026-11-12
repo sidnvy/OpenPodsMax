@@ -29,6 +29,7 @@ Install a JDK and `ripgrep`, then run the offline checks:
 ```sh
 bash tests/run_max2_jvm.sh
 python3 tests/test_apple_identity_transaction.py
+python3 tests/test_apple_identity_config.py
 python3 tests/test_settings_bootstrap_editor.py
 python3 tests/test_bootstrap_wrapper.py
 python3 tests/portability_static_contract.py

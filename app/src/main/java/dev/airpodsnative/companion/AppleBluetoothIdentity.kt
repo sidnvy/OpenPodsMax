@@ -14,7 +14,7 @@ internal object AppleBluetoothIdentity {
     private val roots = listOf("/system/bin/su", "/system/xbin/su", "/sbin/su", "/su/bin/su")
     val rootAvailable: Boolean get() = roots.any { File(it).canExecute() }
     data class Result(val enabled: Boolean, val status: String, val restorePending: Boolean)
-    private data class Probe(val boot: String, val vendor: String, val source: String, val backend: Boolean, val state: String, val busy: Boolean)
+    private data class Probe(val boot: String, val vendor: String, val source: String, val backend: Int, val state: String, val busy: Boolean, val configActive: Boolean, val configPending: Boolean)
     private data class Reply(val code: Int, val values: Map<String, String>)
     private fun number(value: String): Int? = when {
         value.isEmpty() -> null
@@ -27,7 +27,8 @@ internal object AppleBluetoothIdentity {
     private fun quote(value: String) = "'" + value.replace("'", "'\\''") + "'"
     private fun run(context: Context, vararg args: String): Reply {
         val root = roots.firstOrNull { File(it).canExecute() } ?: return Reply(10, emptyMap())
-        val script = context.assets.open("apple_identity.sh").bufferedReader().use { it.readText() }
+        val script = context.assets.open("apple_identity_config.sh").bufferedReader().use { it.readText() } + "\n" +
+            context.assets.open("apple_identity.sh").bufferedReader().use { it.readText() }
         val output = File.createTempFile("identity-", ".result", context.cacheDir)
         try {
             val transaction = "set -- " + args.joinToString(" ", transform = ::quote) + "\n" + script
@@ -38,7 +39,7 @@ internal object AppleBluetoothIdentity {
                 if (!process.waitFor(5, TimeUnit.SECONDS)) process.destroyForcibly()
                 return Reply(30, emptyMap()) // Durable preimage remains available for explicit recovery.
             }
-            val allowed = setOf("BOOT", "VENDOR", "SOURCE", "BACKEND", "STATE", "BUSY", "RESULT", "ROLLBACK")
+            val allowed = setOf("BOOT", "VENDOR", "SOURCE", "BACKEND", "STATE", "BUSY", "CONFIG_ACTIVE", "CONFIG_PENDING", "RESULT", "ROLLBACK", "CONFIG_ROLLBACK")
             val values = output.useLines { lines -> lines.take(32).mapNotNull {
                 val split = it.indexOf('=')
                 if (split < 0 || it.length > 160) null else it.substring(0, split).takeIf(allowed::contains)?.let { key -> key to it.substring(split + 1) }
@@ -52,7 +53,7 @@ internal object AppleBluetoothIdentity {
         val boot = r.values["BOOT"]?.takeIf { it.matches(Regex("[0-9a-fA-F-]{36}")) } ?: return null
         val vendor = r.values["VENDOR"]?.takeIf(::valid) ?: return null
         val source = r.values["SOURCE"]?.takeIf(::valid) ?: return null
-        return Probe(boot, vendor, source, r.values["BACKEND"] == "1", r.values["STATE"].orEmpty(), r.values["BUSY"] != "0")
+        return Probe(boot, vendor, source, r.values["BACKEND"]?.toIntOrNull() ?: 0, r.values["STATE"].orEmpty(), r.values["BUSY"] != "0", r.values["CONFIG_ACTIVE"] == "1", r.values["CONFIG_PENDING"] == "1")
     }
     fun restorePending(context: Context): Boolean = context.getSharedPreferences("selected_airpods", 0).contains(JOURNAL + "boot")
 
@@ -87,18 +88,18 @@ internal object AppleBluetoothIdentity {
             val original = current.vendor == originalVendor && current.source == originalSource
             if (saved && !apple(current) && !original)
                 return finish("Bluetooth identity changed in another tool. It was not overwritten.")
-            if (enable && apple(current)) {
+            if (enable && apple(current) && (current.backend != 2 || current.configActive)) {
                 if (!prefs.edit().putBoolean(AppleIdentityConfig.PREF, true).commit()) return finish("Couldn’t save your choice.")
                 return finish(if (saved) "Apple identity applied for this boot. Device switching still needs a compatibility test."
                     else "Apple identity is already set by another tool. Turning this switch off will leave that tool’s setting unchanged.")
             }
-            if (!enable && original) {
+            if (!enable && original && !current.configPending) {
                 if (!clearJournal()) return finish("Identity already restored; couldn’t clear the saved recovery state.")
                 return finish("Original phone identity restored.")
             }
             if (current.state != "ON") return finish("Turn on Bluetooth, then try again." +
                 if (restorePending(context)) " Original identity restoration is pending." else "")
-            if (!current.backend) return finish("This Bluetooth stack does not expose the supported identity method." +
+            if (current.backend == 0 && !current.configPending) return finish("This Bluetooth stack does not expose the supported identity method." +
                 if (restorePending(context)) " Saved recovery information was kept." else "")
             val audio = context.getSystemService(AudioManager::class.java)
             if (audio == null || audio.mode != AudioManager.MODE_NORMAL || audio.isMusicActive)
@@ -106,7 +107,9 @@ internal object AppleBluetoothIdentity {
             if (enable && !saved && !prefs.edit().putString(JOURNAL + "boot", current.boot)
                     .putString(JOURNAL + "vendor", current.vendor).putString(JOURNAL + "source", current.source).commit())
                 return finish("Couldn’t save the original identity. Nothing was changed.")
-            val result = run(context, "change", current.vendor, current.source,
+            val action = if (enable && current.backend == 2) "enable-config"
+                else if (!enable && current.configPending) "disable-config" else "change"
+            val result = run(context, action, current.vendor, current.source,
                 if (enable) APPLE else originalVendor, if (enable) SOURCE else originalSource, current.boot,
                 File(context.filesDir, "apple-identity.lock").absolutePath)
             Log.i("AppleBluetoothIdentity", "TRANSACTION_RESULT=" + result.code)
@@ -115,7 +118,7 @@ internal object AppleBluetoothIdentity {
             val after = probe(context)
             if (after?.busy == true) return finish("Another identity change is still finishing. Saved recovery information was kept.")
             if (result.code == 0 && after?.boot == current.boot &&
-                (if (enable) apple(after) else after.vendor == originalVendor && after.source == originalSource)) {
+                (if (enable) apple(after) && (current.backend != 2 || after.configActive) else !after.configPending && after.vendor == originalVendor && after.source == originalSource)) {
                 if (enable) {
                     if (!prefs.edit().putBoolean(AppleIdentityConfig.PREF, true).commit())
                         return finish("Identity changed; saving the switch failed. Recovery information was retained.")
@@ -123,13 +126,14 @@ internal object AppleBluetoothIdentity {
                 return finish(if (enable) "Apple identity applied for this boot. Test switching on both devices to confirm support."
                     else "Original phone identity restored. Existing AirPods bonds may retain cached identity information.")
             }
-            if (after?.boot == current.boot && after.vendor == originalVendor && after.source == originalSource) clearJournal()
+            if (after?.boot == current.boot && !after.configPending && after.vendor == originalVendor && after.source == originalSource) clearJournal()
             val message = when (result.code) {
                 13 -> "End the call before changing Bluetooth identity."
                 14 -> "Turn on Bluetooth, then try again."
                 18 -> "The phone restarted during the operation. Try again."
                 19 -> "This Bluetooth stack does not support this method."
                 20 -> "Bluetooth identity changed during the operation. Check it before retrying."
+                22 -> "The temporary Bluetooth config could not be verified. Recovery information was kept."
                 21 -> "Another identity change is still finishing. Wait before retrying."
                 else -> "Couldn’t confirm the identity change. Check Bluetooth before retrying."
             }
