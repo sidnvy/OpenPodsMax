@@ -32,6 +32,7 @@ Real Pixel 10 Pro XL captures from an earlier test build. Product imagery is inc
 - Adjust supported settings including Personalized Volume and Conversation Awareness.
 - Automatically pause when removed and resume the same player when worn; manual pauses stay paused.
 - Switch phones manually without the inactive phone continually reclaiming the headset.
+- Development build: optionally enable [Apple Bluetooth identity](docs/ROOT_BLUETOOTH_IDENTITY.md) on compatible rooted phones; global identity changes include a saved-value restore path.
 - Opt into SBC on each connection for the selected headset when AAC has compatibility problems (development build; see [limits](docs/COMPATIBILITY.md#automatic-sbc)).
 
 ## Get started
@@ -43,7 +44,7 @@ You need **AirPods Max 2** and **Android 12L+ (API 32+)**. Hardware testing cove
 3. Open OpenPodsMax, grant Bluetooth access and approve the selected Max 2.
 4. Optionally enable **Pause when removed** and **Resume when worn**. Resume requires notification access.
 
-Ordinary app use needs no root or Shizuku. Native system integration requires additional device-specific setup. Simultaneous multipoint and Apple-style automatic switching are not implemented.
+Ordinary app use needs no root or Shizuku. Native system integration requires additional device-specific setup. The development branch includes experimental native handoff and a root identity switch; phone-to-phone compatibility still requires hardware validation. See [root identity limits](docs/ROOT_BLUETOOTH_IDENTITY.md).
 
 This is an **early public release**. See [compatibility and setup notes](docs/COMPATIBILITY.md) for system integration, permissions, migration from debug builds and known limitations.
 

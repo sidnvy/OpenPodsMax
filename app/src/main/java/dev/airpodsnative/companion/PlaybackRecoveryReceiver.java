@@ -26,7 +26,8 @@ public final class PlaybackRecoveryReceiver extends BroadcastReceiver {
             String selected=context.getSharedPreferences("selected_airpods",0).getString("bond_address",null);
             if(device==null || selected==null || !selected.equalsIgnoreCase(device.getAddress()))return;
         }
-        if (!context.getSharedPreferences("selected_airpods", 0).getBoolean(WearPauseService.PREF, false)
+        if (!(context.getSharedPreferences("selected_airpods", 0).getBoolean(WearPauseService.PREF, false)
+            || AppleIdentityConfig.enabled(context))
             || context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) return;
         try {
             context.startForegroundService(new Intent(context, WearPauseService.class));

@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.airpodsnative.companion.ui.*
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -100,15 +101,41 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
     var permission by remember { mutableStateOf(preview || context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) }
     val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { permission = it }
     var selected by remember { mutableStateOf(prefs.getString("bond_address", null)) }
-    val motoIdentitySupported = !preview && MotoBluetoothIdentity.supported
-    var motoIdentityEnabled by remember { mutableStateOf(prefs.getBoolean(MotoBluetoothIdentity.PREF, false)) }
-    var motoIdentityStatus by remember { mutableStateOf("Requires temporary root and an approved AirPods Max 2.") }
-    LaunchedEffect(motoIdentityEnabled, foregroundGeneration, selected, permission) {
-        if (motoIdentitySupported && motoIdentityEnabled && permission && selected != null) {
-            motoIdentityStatus = "Checking Apple Bluetooth identity…"
-            val address = selected
-            motoIdentityStatus = withContext(Dispatchers.IO) { MotoBluetoothIdentity.apply(context, address) }
+    val identityRootAvailable = !preview && AppleBluetoothIdentity.rootAvailable
+    var phoneIdentityEnabled by remember { mutableStateOf(prefs.getBoolean(AppleIdentityConfig.PREF, false)) }
+    var phoneIdentityStatus by remember { mutableStateOf(prefs.getString(AppleIdentityConfig.STATUS,
+        "Root required. Applies on app open while enabled. Bluetooth restarts on changes.").orEmpty()) }
+    var phoneIdentityBusy by remember { mutableStateOf(false) }
+    var phoneIdentityRestorePending by remember { mutableStateOf(!preview && AppleBluetoothIdentity.restorePending(context)) }
+    var phoneIdentityConfirmation by remember { mutableStateOf<Boolean?>(null) }
+    fun applyPhoneIdentity(enabled: Boolean) {
+        if (preview || phoneIdentityBusy) return
+        phoneIdentityBusy = true
+        scope.launch {
+            // Finish the bounded transaction and recovery even if this screen leaves composition.
+            val result = withContext(NonCancellable + Dispatchers.IO) {
+                AppleBluetoothIdentity.change(context, selected, enabled)
+            }
+            phoneIdentityEnabled = result.enabled
+            phoneIdentityStatus = result.status
+            phoneIdentityRestorePending = result.restorePending
+            phoneIdentityBusy = false
         }
+    }
+    LaunchedEffect(foregroundGeneration, selected, permission) {
+        if (!preview && phoneIdentityEnabled && permission && !phoneIdentityBusy) {
+            applyPhoneIdentity(true)
+        }
+    }
+    if (phoneIdentityConfirmation != null) {
+        val enable = phoneIdentityConfirmation == true
+        AlertDialog(onDismissRequest = { phoneIdentityConfirmation = null },
+            title = { Text(if (enable) "Use Apple Bluetooth identity?" else "Restore phone identity?") },
+            text = { Text("Bluetooth will restart and briefly disconnect all Bluetooth devices. Pause playback and end any call first. " +
+                if (enable) "This changes this phone’s identity for all Bluetooth peers. Compatible devices may need pairing again; the app will not remove any pairing."
+                else "The app will restore only its saved original values. AirPods may retain cached information until paired again.") },
+            confirmButton = { TextButton(onClick = { phoneIdentityConfirmation = null; applyPhoneIdentity(enable) }) { Text("Continue") } },
+            dismissButton = { TextButton(onClick = { phoneIdentityConfirmation = null }) { Text("Cancel") } })
     }
     var pendingIdentity by remember { mutableStateOf<String?>(null) }
     var identityVersion by remember { mutableIntStateOf(0) }
@@ -121,6 +148,8 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
     var sbcStatus by remember(selected) { mutableStateOf(prefs.getString(SbcCodecController.statusKey(selected), "")) }
     DisposableEffect(prefs, selected) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == AppleIdentityConfig.PREF) phoneIdentityEnabled = prefs.getBoolean(key, false)
+            if (key == AppleIdentityConfig.STATUS) phoneIdentityStatus = prefs.getString(key, "").orEmpty()
             if (key == WearResumeController.PREF) resumeWhenWorn = prefs.getBoolean(key, false)
             if (key == WearPauseService.PREF) pauseWhenRemoved = prefs.getBoolean(key, false)
             if (key == SbcCodecController.key(selected)) useSbc = prefs.getBoolean(key, false)
@@ -129,8 +158,8 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
         prefs.registerOnSharedPreferenceChangeListener(listener)
         onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
-    LaunchedEffect(pauseWhenRemoved, useSbc, selected, permission, preview) {
-        if (!preview && (pauseWhenRemoved || useSbc) && permission && DeviceIdentityStore.trustedAndBonded(context, selected)) {
+    LaunchedEffect(pauseWhenRemoved, useSbc, phoneIdentityEnabled, selected, permission, preview) {
+        if (!preview && (pauseWhenRemoved || useSbc || phoneIdentityEnabled) && permission && DeviceIdentityStore.trustedAndBonded(context, selected)) {
             try { context.startForegroundService(Intent(context, WearPauseService::class.java)) }
             catch (e: RuntimeException) {
                 // A transient foreground-service restriction must not erase user intent.
@@ -477,11 +506,9 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
                             } })
                         Screen.ABOUT -> AboutPage(
                             device, finish, observedColorCode, colorScanMessage,
-                            motoIdentitySupported, motoIdentityEnabled, motoIdentityStatus,
-                            onMotoIdentityChanged = { enabled ->
-                                prefs.edit().putBoolean(MotoBluetoothIdentity.PREF, enabled).apply()
-                                motoIdentityEnabled = enabled
-                            },
+                            identityRootAvailable, phoneIdentityEnabled, phoneIdentityStatus,
+                            phoneIdentityBusy, phoneIdentityRestorePending,
+                            onPhoneIdentityChanged = { enabled -> phoneIdentityConfirmation = enabled },
                             onChangeHeadset = {
                                 controller.stop()
                                 selected = null
@@ -583,7 +610,7 @@ private fun Overview(
     SectionCaption("ANDROID PLAYBACK")
     Group {
         IosSwitchRow("Use SBC automatically", "Applies to this AirPods on each connection. Audio may pause briefly when switching.",
-            useSbc, !preview, onUseSbc)
+            useSbc, !preview, onCheckedChange = onUseSbc)
         Separator()
         IosSwitchRow("Pause when removed", "Pauses music on this phone.",
             pauseWhenRemoved, !preview && d.connected && Build.VERSION.SDK_INT >= 33,
@@ -710,8 +737,9 @@ private fun Overview(
 
 @Composable private fun AboutPage(
     d: DeviceState, finish: AirPodsFinish, colorCode: Int, colorScanMessage: String,
-    motoIdentitySupported: Boolean, motoIdentityEnabled: Boolean, motoIdentityStatus: String,
-    onMotoIdentityChanged: (Boolean) -> Unit,
+    identityRootAvailable: Boolean, phoneIdentityEnabled: Boolean, phoneIdentityStatus: String,
+    phoneIdentityBusy: Boolean, phoneIdentityRestorePending: Boolean,
+    onPhoneIdentityChanged: (Boolean) -> Unit,
     onChangeHeadset: () -> Unit,
     onSelectFinish: (AirPodsFinish) -> Unit, onDetect: () -> Unit
 ) {
@@ -753,18 +781,22 @@ private fun Overview(
     Group {
         NavRow("Change AirPods Max 2", "Select another paired headset", onClick = onChangeHeadset)
     }
-    if (motoIdentitySupported) {
-        SectionCaption("MOTO · EXPERIMENTAL")
-        Group {
-            IosSwitchRow(
-                "Apply Apple Bluetooth identity",
-                if (motoIdentityEnabled) motoIdentityStatus
-                else "Apply on app open with root. Bluetooth restarts briefly.",
-                motoIdentityEnabled, enabled = true,
-                onCheckedChange = onMotoIdentityChanged
-            )
+    SectionCaption("PHONE BLUETOOTH · ROOT")
+    Group {
+        IosSwitchRow("Apple Bluetooth identity",
+            if (phoneIdentityBusy) "Updating phone identity…"
+            else if (!identityRootAvailable) "Requires a rooted phone and a compatible Bluetooth stack."
+            else "Helps compatible AirPods switch devices. Restarts Bluetooth; affects all connected devices.",
+            phoneIdentityEnabled, enabled = identityRootAvailable && !phoneIdentityBusy,
+            onCheckedChange = onPhoneIdentityChanged)
+        if (!phoneIdentityEnabled && phoneIdentityRestorePending) {
+            Separator()
+            NavRow("Restore original identity", "A previous change still needs restoring.",
+                enabled = !phoneIdentityBusy) { onPhoneIdentityChanged(false) }
         }
     }
+    if (phoneIdentityStatus.isNotBlank()) Text(phoneIdentityStatus,
+        color = p.secondary, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp))
     SectionCaption("PRIVACY")
     Group {
         detail("Account required", "No")

@@ -11,7 +11,7 @@ Hardware acceptance testing used **AirPods Max 2**, **Pixel 10 Pro XL** and **Mo
 
 The native device-details screenshot shows the result after experimental ADB metadata registration. Installing the APK alone does not enable this integration. Bluetooth cycles or system updates can overwrite the entry, and the ordinary APK cannot repair it automatically. The included [bootstrap helper](../scripts/bootstrap_settings_for_bond.sh) is restricted to Moto Edge 70 on API 37; it is development tooling, not a universal installer. Review its target checks and snapshot/rollback behavior before use. The artwork registration helper cannot exactly restore an original null value.
 
-Simultaneous multipoint and Apple-style automatic switching are not implemented. Switch phones manually using the destination phone's Bluetooth settings.
+The ordinary configuration uses manual switching. This development branch adds the existing experimental Moto/Linux native handoff code and a generalized [Apple Bluetooth identity switch](ROOT_BLUETOOTH_IDENTITY.md) for compatible rooted phones. The new switch is off by default. The prior Moto/Linux acceptance does not certify Fold-to-Moto or arbitrary phone-to-phone switching; cold reconnect and cached identity remain limits.
 
 ## Installing over an existing version
 
@@ -26,7 +26,8 @@ Official 0.2.0 and 0.2.1 installations can update directly to 0.2.2 with the sam
 | Foreground service | Keep enabled playback features running in the background |
 | Bluetooth scanning and display over other apps, optional | Nearby pairing popup |
 | Android companion-device association, optional | Let this app control the selected headset's codec without a privileged grant; Android presents its own approval dialog |
-| Receive boot completed | Attempt to restore explicitly enabled automatic SBC for the still-approved, paired headset; no Bluetooth connection is initiated |
+| Receive boot completed | Attempt to restore opted-in playback/SBC/handoff controls for the approved bond; no root identity transaction or new Bluetooth connection is initiated |
+| Root access, optional | Change and restore this phone's runtime Bluetooth Device ID after opt-in; Bluetooth restarts, affecting all Bluetooth devices |
 
 Microphone recording is not used. When reporting a problem, remove device addresses, personal names and notification content from logs or screenshots.
 
@@ -36,7 +37,7 @@ The 0.2.4 development build adds **Android Playback → Use SBC automatically**.
 
 The existing playback foreground service observes A2DP connections. For the selected, approved, already-connected headset only, it requests SBC and reads the actual codec back. A short audio interruption can occur when switching. It never connects a disconnected headset or changes another headset. Retries are limited to four writes per connection; unsupported phones show a failure status rather than a success claim.
 
-Disabling the switch cancels pending codec changes. It does not force AAC into a currently playing session; reconnect or select AAC manually if desired. The playback notification's **Stop** action disables both automatic SBC and removal pause. The Android companion-device link remains until removed in Android Settings or the app is uninstalled.
+Disabling the switch cancels pending codec changes. It does not force AAC into a currently playing session; reconnect or select AAC manually if desired. The playback notification's **Stop** action disables automatic SBC, removal pause and future root identity application; any existing identity override needs its saved-value restore action in the app. The Android companion-device link remains until removed in Android Settings or the app is uninstalled.
 
 The preference survives app replacement. A boot/update receiver attempts to restore the opted-in service for a still-paired headset, but OEM background restrictions and Bluetooth readiness can require opening the app again. Reboot recovery, deep Doze and other OEMs remain unverified. A saved preference is not a permanent change to the phone's codec negotiation defaults; this feature reapplies SBC after each connection.
 

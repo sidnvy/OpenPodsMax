@@ -8,6 +8,6 @@ JAVAC="${JAVA_HOME:+$JAVA_HOME/bin/}javac"
 JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 mapfile -t STUBS < <(rg --files tests/jvm-stubs -g '*.java')
 "$JAVAC" --release 17 -d "$OUT" "${STUBS[@]}" \
- app/src/main/java/dev/airpodsnative/companion/{PlaybackRecoveryReceiver,AapController,AapFrameValidator,HandoffRequest,SbcCodecPolicy,ConnectionPolicy,WearPausePolicy,WearPauseDebounce,WearResumePolicy}.java \
+ app/src/main/java/dev/airpodsnative/companion/{AppleIdentityConfig,PlaybackRecoveryReceiver,AapController,AapFrameValidator,HandoffRequest,SbcCodecPolicy,ConnectionPolicy,WearPausePolicy,WearPauseDebounce,WearResumePolicy}.java \
  tests/{SbcCodecPolicyTest,AapControllerHandoffTest,PlaybackRecoveryReceiverTest,WearResumePolicyTest,WearPausePolicyTest,WearPauseDebounceTest,AapControllerReadbackBackoffTest,AapControllerBlockedWriteTest,AapControllerQueryLockTest,AapControllerOwnershipTest,AapControllerRaceTest,AapControllerParsingTest,AapControllerTimeoutTest,AapControllerReadbackPresentationTest,AapFrameValidatorTest,ConnectionPolicyTest}.java
 for TEST in SbcCodecPolicyTest AapControllerHandoffTest PlaybackRecoveryReceiverTest WearResumePolicyTest WearPausePolicyTest WearPauseDebounceTest AapFrameValidatorTest ConnectionPolicyTest AapControllerReadbackBackoffTest AapControllerBlockedWriteTest AapControllerQueryLockTest AapControllerOwnershipTest AapControllerRaceTest AapControllerParsingTest AapControllerTimeoutTest AapControllerReadbackPresentationTest; do "$JAVA" -cp "$OUT" "$TEST"; done

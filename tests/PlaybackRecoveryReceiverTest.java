@@ -7,13 +7,14 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import dev.airpodsnative.companion.PlaybackRecoveryReceiver;
+import dev.airpodsnative.companion.AppleIdentityConfig;
 import dev.airpodsnative.companion.WearPauseService;
 
 /** Executes production receiver branches; framework cross-UID delivery is a device check. */
 public final class PlaybackRecoveryReceiverTest {
     private static final String TARGET="AA:BB:CC:DD:EE:01";
     private static final class FakeContext extends Context implements SharedPreferences {
-        boolean enabled=true, permitted=true, failStart;
+        boolean enabled=true, identity=false, permitted=true, failStart;
         String selected=TARGET;
         int starts;
         public SharedPreferences getSharedPreferences(String name,int mode) {
@@ -23,6 +24,7 @@ public final class PlaybackRecoveryReceiverTest {
             check("bond_address".equals(key), "unexpected address key"); return selected;
         }
         public boolean getBoolean(String key,boolean fallback) {
+            if(AppleIdentityConfig.PREF.equals(key))return identity;
             check(WearPauseService.PREF.equals(key), "unexpected opt-in key"); return enabled;
         }
         public int checkSelfPermission(String permission) {
@@ -70,6 +72,10 @@ public final class PlaybackRecoveryReceiverTest {
             new PlaybackRecoveryReceiver().onReceive(disabled,new Intent(Intent.ACTION_BOOT_COMPLETED));
             new PlaybackRecoveryReceiver().onReceive(disabled,acl(TARGET));
             check(disabled.starts==0&&!disabled.enabled,"opt-out must remain off");
+            FakeContext handoffOnly=new FakeContext();handoffOnly.enabled=false;handoffOnly.identity=true;
+            new PlaybackRecoveryReceiver().onReceive(handoffOnly,new Intent(Intent.ACTION_BOOT_COMPLETED));
+            new PlaybackRecoveryReceiver().onReceive(handoffOnly,acl(TARGET));
+            check(handoffOnly.starts==2&&!handoffOnly.enabled&&handoffOnly.identity,"identity-only recovery must preserve wear opt-out");
         }
         Build.VERSION.SDK_INT=32;
         expect(new Intent(Intent.ACTION_BOOT_COMPLETED),0,c->{});
