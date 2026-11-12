@@ -35,3 +35,16 @@ No device addresses, bonds, keys or raw root output are uploaded. Root result fi
 ## Fold legacy-backend finding
 
 On the Fold test, a successful property write and Bluetooth restart still advertised Samsung Vendor ID 0x0075 to an independent SDP client. The native library did not expose the modern DID flag and the active config was the legacy primary `bt_did.conf`. This rejects treating property-name strings or local readback as effective identity verification. The compatibility backend was added for this path. Shell-context getprop also hid these protected properties, while root readback exposed them; ordinary-shell blanks are not evidence of unset defaults.
+
+## Fold hardware check — 2026-11-13
+
+Galaxy Z Fold8 / SM-F9710, Android 17 / One UI 9, existing KernelSU root:
+
+- The owner allowed OpenPodsMax in KernelSU; the root switch became available.
+- The property-only candidate and adapter-only config candidate still returned Samsung Vendor ID 0x0075 to a live SDP client on soba. A verified Bluetooth-process refresh changed the advertised ID to Apple 0x004C/source 1.
+- Version 0.2.11 incorporates that refresh. Its real off switch restored Samsung 0x0075/source 1; its on switch returned Apple 0x004C/source 1. All were independent fresh SDP requests, not cached BlueZ device properties.
+- Root readback preserved the exact original property values (vendor 0x0075, unset source). The off path cleared the recovery journal; the final on path saved it again. Bluetooth ended ON with the switch enabled.
+- The signed config in the init namespace matched the original snapshot; the Bluetooth runtime view matched the temporary patch. Pairing and firmware were unchanged, and no phone reboot was performed.
+- Existing SBC, pause and resume preferences remained enabled. No headphones were connected for this identity check, so current audio codec, audible handoff, cold reconnect and phone-to-phone switching were not accepted by this test.
+
+This validates the identity switch and its restore path on this Fold, not every rooted phone or an Apple-equivalent seamless audio experience.
