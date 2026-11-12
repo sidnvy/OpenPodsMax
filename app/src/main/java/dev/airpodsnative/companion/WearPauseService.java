@@ -22,6 +22,7 @@ public final class WearPauseService extends Service {
     private WearResumeController resume;
     private AapController controller;
     private AudioManager audio;
+    private SbcCodecController sbc;
     private String target;
     private long generation=-1;
     private boolean active;
@@ -69,28 +70,35 @@ public final class WearPauseService extends Service {
         super.onCreate();controller=AapController.instance();controller.initialize(this);
         audio=getSystemService(AudioManager.class);resume=new WearResumeController(this);
         getSystemService(NotificationManager.class).createNotificationChannel(
-            new NotificationChannel(CHANNEL,"Pause when removed",NotificationManager.IMPORTANCE_LOW));
+            new NotificationChannel(CHANNEL,"AirPods playback",NotificationManager.IMPORTANCE_LOW));
     }
     @Override public int onStartCommand(Intent intent,int flags,int startId){
-        if(intent!=null && STOP.equals(intent.getAction())){prefs().edit().putBoolean(PREF,false).apply();stopSelf();return START_NOT_STICKY;}
         String selected=prefs().getString("bond_address",null);
-        if(!prefs().getBoolean(PREF,false) || !DeviceIdentityStore.trustedAndBonded(this,selected)){
+        if(intent!=null && STOP.equals(intent.getAction())){
+            prefs().edit().putBoolean(PREF,false).putBoolean(SbcCodecController.key(selected),false).apply();
             stopSelf();return START_NOT_STICKY;
         }
-        if(active && selected.equalsIgnoreCase(target))return START_STICKY;
+        boolean pause=prefs().getBoolean(PREF,false);
+        boolean useSbc=SbcCodecController.enabled(this,selected);
+        if((!pause && !useSbc) || !DeviceIdentityStore.trustedAndBonded(this,selected)){
+            stopSelf();return START_NOT_STICKY;
+        }
+        if(sbc!=null){sbc.close();sbc=null;}
+        controller.removeWearListener(wear);controller.removeSessionListener(session);
         reset();target=selected;
         PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE);
         PendingIntent stop=PendingIntent.getService(this,1,new Intent(this,WearPauseService.class).setAction(STOP),PendingIntent.FLAG_IMMUTABLE);
         Notification notification=new Notification.Builder(this,CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_media_pause).setContentTitle("Pause when AirPods are removed")
-            .setContentText("Android playback control · tap to open settings").setContentIntent(open)
+            .setSmallIcon(android.R.drawable.ic_media_pause).setContentTitle(pause?"Pause when AirPods are removed":"AirPods audio compatibility")
+            .setContentText(useSbc?"SBC on connection · tap to open settings":"Android playback control · tap to open settings").setContentIntent(open)
             .addAction(new Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel,"Stop",stop).build())
             .setOngoing(true).build();
         try {
             if(Build.VERSION.SDK_INT>=34)startForeground(NOTIFICATION,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
             else startForeground(NOTIFICATION,notification);
-            active=true;controller.addWearListener(wear);controller.addSessionListener(session);controller.addHandoffListener(handoff);
-            controller.connectReadOnlyAsync(target);
+            active=true;controller.addHandoffListener(handoff);
+            if(pause){controller.addWearListener(wear);controller.addSessionListener(session);controller.connectReadOnlyAsync(target);}
+            if(useSbc){sbc=new SbcCodecController(this,target);sbc.start();}
             Log.i(AapController.TAG,"WEAR_PAUSE_SERVICE_ACTIVE");
         }catch(RuntimeException ex){
             // Transient Android service-start failures are not user opt-out.
@@ -149,6 +157,7 @@ public final class WearPauseService extends Service {
     }
     @Override public void onDestroy(){
         active=false;handler.removeCallbacksAndMessages(null);policy.reset();resume.clear();
+        if(sbc!=null){sbc.close();sbc=null;}
         controller.removeWearListener(wear);controller.removeSessionListener(session);controller.removeHandoffListener(handoff);
         stopForeground(STOP_FOREGROUND_REMOVE);super.onDestroy();
     }

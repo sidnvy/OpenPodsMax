@@ -32,6 +32,7 @@ Real Pixel 10 Pro XL captures from an earlier test build. Product imagery is inc
 - Adjust supported settings including Personalized Volume and Conversation Awareness.
 - Automatically pause when removed and resume the same player when worn; manual pauses stay paused.
 - Switch phones manually without the inactive phone continually reclaiming the headset.
+- Opt into SBC on each connection for the selected headset when AAC has compatibility problems (development build; see [limits](docs/COMPATIBILITY.md#automatic-sbc)).
 
 ## Get started
 

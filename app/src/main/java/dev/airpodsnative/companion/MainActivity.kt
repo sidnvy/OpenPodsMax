@@ -117,16 +117,20 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
     val pairingDiscovery = remember { PairingDiscovery(context) }
     var pauseWhenRemoved by remember { mutableStateOf(prefs.getBoolean(WearPauseService.PREF, false)) }
     var resumeWhenWorn by remember { mutableStateOf(prefs.getBoolean(WearResumeController.PREF, false)) }
-    DisposableEffect(prefs) {
+    var useSbc by remember(selected) { mutableStateOf(SbcCodecController.enabled(context, selected)) }
+    var sbcStatus by remember(selected) { mutableStateOf(prefs.getString(SbcCodecController.statusKey(selected), "")) }
+    DisposableEffect(prefs, selected) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key == WearResumeController.PREF) resumeWhenWorn = prefs.getBoolean(key, false)
             if (key == WearPauseService.PREF) pauseWhenRemoved = prefs.getBoolean(key, false)
+            if (key == SbcCodecController.key(selected)) useSbc = prefs.getBoolean(key, false)
+            if (key == SbcCodecController.statusKey(selected)) sbcStatus = prefs.getString(key, "")
         }
         prefs.registerOnSharedPreferenceChangeListener(listener)
         onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
-    LaunchedEffect(pauseWhenRemoved, selected, permission, preview) {
-        if (!preview && pauseWhenRemoved && permission && DeviceIdentityStore.trustedAndBonded(context, selected)) {
+    LaunchedEffect(pauseWhenRemoved, useSbc, selected, permission, preview) {
+        if (!preview && (pauseWhenRemoved || useSbc) && permission && DeviceIdentityStore.trustedAndBonded(context, selected)) {
             try { context.startForegroundService(Intent(context, WearPauseService::class.java)) }
             catch (e: RuntimeException) {
                 // A transient foreground-service restriction must not erase user intent.
@@ -438,6 +442,14 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
                             },
                             pauseWhenRemoved = pauseWhenRemoved,
                             onPauseWhenRemoved = { prefs.edit().putBoolean(WearPauseService.PREF, it).apply() },
+                            useSbc = useSbc, sbcStatus = sbcStatus.orEmpty(),
+                            onUseSbc = { enabled ->
+                                val address = selected
+                                if (!preview && address != null) {
+                                    if (enabled) SbcAssociation.enable(context as Activity, address)
+                                    else SbcAssociation.disable(context, address)
+                                }
+                            },
                             onBoolean = { id, value ->
                                 if (!preview) scope.launch {
                                     // A synchronous L2CAP write must never block Compose input.
@@ -529,6 +541,7 @@ private fun Overview(
     onMode: (Int) -> Unit, onScreen: (Screen) -> Unit,
     pauseWhenRemoved: Boolean, onPauseWhenRemoved: (Boolean) -> Unit,
     resumeWhenWorn: Boolean, onResumeWhenWorn: (Boolean) -> Unit,
+    useSbc: Boolean, sbcStatus: String, onUseSbc: (Boolean) -> Unit,
     onBoolean: (Int, Boolean) -> Unit
 ) {
     val p = LocalApplePalette.current
@@ -569,6 +582,9 @@ private fun Overview(
     Group { NavRow("Adaptive Audio", "Customize noise allowance") { onScreen(Screen.ADAPTIVE) } }
     SectionCaption("ANDROID PLAYBACK")
     Group {
+        IosSwitchRow("Use SBC automatically", "Applies to this AirPods on each connection. Audio may pause briefly when switching.",
+            useSbc, !preview, onUseSbc)
+        Separator()
         IosSwitchRow("Pause when removed", "Pauses music on this phone.",
             pauseWhenRemoved, !preview && d.connected && Build.VERSION.SDK_INT >= 33,
             onCheckedChange = onPauseWhenRemoved)
@@ -576,6 +592,8 @@ private fun Overview(
         IosSwitchRow("Resume when worn", "Resumes the same player within 60 seconds. Requires notification access; enable this switch after granting access.",
             resumeWhenWorn, !preview && pauseWhenRemoved, onCheckedChange = onResumeWhenWorn)
     }
+    if (sbcStatus.isNotBlank()) Text(sbcStatus, fontSize = 12.sp, color = p.secondary,
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp))
     SectionCaption("ENVIRONMENT")
     Group {
         NavRow("Loud Sound Reduction", "Unavailable on Android", enabled = false) {}
