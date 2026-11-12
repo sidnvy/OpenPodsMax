@@ -11,11 +11,11 @@ Hardware acceptance testing used **AirPods Max 2**, **Pixel 10 Pro XL** and **Mo
 
 The native device-details screenshot shows the result after experimental ADB metadata registration. Installing the APK alone does not enable this integration. Bluetooth cycles or system updates can overwrite the entry, and the ordinary APK cannot repair it automatically. The included [bootstrap helper](../scripts/bootstrap_settings_for_bond.sh) is restricted to Moto Edge 70 on API 37; it is development tooling, not a universal installer. Review its target checks and snapshot/rollback behavior before use. The artwork registration helper cannot exactly restore an original null value.
 
-The ordinary configuration uses manual switching. This development branch adds the existing experimental Moto/Linux native handoff code and a generalized [Apple Bluetooth identity switch](ROOT_BLUETOOTH_IDENTITY.md) for compatible rooted phones. The new switch is off by default. The prior Moto/Linux acceptance does not certify Fold-to-Moto or arbitrary phone-to-phone switching; cold reconnect and cached identity remain limits.
+The ordinary configuration uses manual switching. Version 0.2.11 adds the existing experimental Moto/Linux native handoff code and a generalized [Apple Bluetooth identity switch](ROOT_BLUETOOTH_IDENTITY.md) for compatible rooted phones. The new switch is off by default. On 2026-11-13 the owner also confirmed seamless audible switching between the Linux laptop and Galaxy Z Fold8 with 0.2.11. These specific results do not certify Fold-to-Moto or arbitrary phone-to-phone switching; cold reconnect and cached identity remain limits.
 
 ## Installing over an existing version
 
-Official 0.2.0 and 0.2.1 installations can update directly to 0.2.2 with the same release signing key. Private/debug builds use a different certificate and require uninstalling first, resetting app data and permissions. See [release verification](RELEASING.md).
+Official 0.2.x installations can update directly to 0.2.11 with the same release signing key. Private/debug builds use a different certificate and require uninstalling first, resetting app data and permissions. See [release verification](RELEASING.md).
 
 ## Permissions and privacy
 
@@ -33,7 +33,7 @@ Microphone recording is not used. When reporting a problem, remove device addres
 
 ## Automatic SBC
 
-The 0.2.4 development build adds **Android Playback → Use SBC automatically**. It is off by default and saved per owner-approved Bluetooth bond. Enable it for a headset whose AAC playback is unreliable; on Android 13+ approve Android's device-link dialog once. No Samsung or cloud account, root, Shizuku, signature permission grant or ongoing nearby scan is used.
+Version 0.2.11 includes **Android Playback → Use SBC automatically**. It is off by default and saved per owner-approved Bluetooth bond. Enable it for a headset whose AAC playback is unreliable; on Android 13+ approve Android's device-link dialog once. No Samsung or cloud account, root, Shizuku, signature permission grant or ongoing nearby scan is used.
 
 The existing playback foreground service observes A2DP connections. For the selected, approved, already-connected headset only, it requests SBC and reads the actual codec back. A short audio interruption can occur when switching. It never connects a disconnected headset or changes another headset. Retries are limited to four writes per connection; unsupported phones show a failure status rather than a success claim.
 

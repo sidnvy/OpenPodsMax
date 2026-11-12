@@ -1,6 +1,6 @@
 # Apple Bluetooth identity on rooted phones
 
-Development version 0.2.11 / code 14 generalizes the Moto identity experiment. It keeps the existing native AAP handoff response and combines it with optional per-headset SBC. It is not a universal multipoint compatibility claim.
+Version 0.2.11 / code 14 generalizes the Moto identity experiment. It keeps the existing native AAP handoff response and combines it with optional per-headset SBC. It is not a universal multipoint compatibility claim.
 
 ## Switch and setup
 
@@ -47,4 +47,8 @@ Galaxy Z Fold8 / SM-F9710, Android 17 / One UI 9, existing KernelSU root:
 - The signed config in the init namespace matched the original snapshot; the Bluetooth runtime view matched the temporary patch. Pairing and firmware were unchanged, and no phone reboot was performed.
 - Existing SBC, pause and resume preferences remained enabled. No headphones were connected for this identity check, so current audio codec, audible handoff, cold reconnect and phone-to-phone switching were not accepted by this test.
 
-This validates the identity switch and its restore path on this Fold, not every rooted phone or an Apple-equivalent seamless audio experience.
+### Owner listening acceptance — 2026-11-13
+
+After the identity check, the owner tested the installed 0.2.11 build with AirPods Max 2 and reported seamless audio switching between the Linux laptop and Fold8. This is a human listening PASS for that device pair, separate from the independent on/off/on SDP checks above. No extra pairing reset, firmware change or phone reboot was performed by the agent for this follow-up.
+
+Fold-to-Moto, cold reconnect, Smart Case auto-connection, reboot persistence and other rooted phones remain unverified. The successful laptop/Fold test does not establish Apple Account/iCloud coordination or a universal multipoint guarantee.

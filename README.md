@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/sidnvy/OpenPodsMax/releases/latest">Download APK</a> ·
-  <a href="docs/releases/0.2.3.md">Release notes</a> ·
+  <a href="docs/releases/0.2.11.md">Release notes</a> ·
   <a href="https://github.com/sidnvy/OpenPodsMax/issues">Feedback</a>
 </p>
 
@@ -22,7 +22,7 @@ Bring AirPods Max 2 controls into Android’s **Connected devices**, alongside a
 
 <p align="center"><em>Android device details after registration (left) · Dedicated settings (right)</em></p>
 
-Real Pixel 10 Pro XL captures from an earlier test build. Product imagery is included; version 0.2.3 focuses on settings responsiveness and playback-service recovery. **System integration is experimental:** it requires separate ADB registration and can reset after Bluetooth cycles or system updates. Installing the APK alone enables the dedicated app. [Screenshot details](docs/images/README.md).
+Real Pixel 10 Pro XL captures from an earlier test build. Product imagery is included; version 0.2.11 adds optional rooted Bluetooth identity, native handoff and automatic SBC. **System integration is experimental:** it requires separate ADB registration and can reset after Bluetooth cycles or system updates. Installing the APK alone enables the dedicated app. [Screenshot details](docs/images/README.md).
 
 ## Features
 
@@ -32,19 +32,19 @@ Real Pixel 10 Pro XL captures from an earlier test build. Product imagery is inc
 - Adjust supported settings including Personalized Volume and Conversation Awareness.
 - Automatically pause when removed and resume the same player when worn; manual pauses stay paused.
 - Switch phones manually without the inactive phone continually reclaiming the headset.
-- Development build: optionally enable [Apple Bluetooth identity](docs/ROOT_BLUETOOTH_IDENTITY.md) on compatible rooted phones; global identity changes include a saved-value restore path.
-- Opt into SBC on each connection for the selected headset when AAC has compatibility problems (development build; see [limits](docs/COMPATIBILITY.md#automatic-sbc)).
+- Optionally enable [Apple Bluetooth identity](docs/ROOT_BLUETOOTH_IDENTITY.md) on compatible rooted phones; global identity changes include a saved-value restore path.
+- Opt into SBC on each connection for the selected headset when AAC has compatibility problems (see [limits](docs/COMPATIBILITY.md#automatic-sbc)).
 
 ## Get started
 
-You need **AirPods Max 2** and **Android 12L+ (API 32+)**. Hardware testing covers **Pixel 10 Pro XL** and **Motorola Edge 70** on API 37; other devices and versions are unverified.
+You need **AirPods Max 2** and **Android 12L+ (API 32+)**. Hardware testing covers **Pixel 10 Pro XL** and **Motorola Edge 70** on API 37. **Galaxy Z Fold8** on API 37 also has targeted SBC, root identity and Linux handoff acceptance; other devices and versions are unverified.
 
 1. Install the signed APK from [Releases](https://github.com/sidnvy/OpenPodsMax/releases/latest).
 2. Pair and connect your headset in Android Bluetooth settings.
 3. Open OpenPodsMax, grant Bluetooth access and approve the selected Max 2.
 4. Optionally enable **Pause when removed** and **Resume when worn**. Resume requires notification access.
 
-Ordinary app use needs no root or Shizuku. Native system integration requires additional device-specific setup. The development branch includes experimental native handoff and a root identity switch; phone-to-phone compatibility still requires hardware validation. See [root identity limits](docs/ROOT_BLUETOOTH_IDENTITY.md).
+Ordinary app use needs no root or Shizuku. Native system integration requires additional device-specific setup. Version 0.2.11 includes experimental native handoff and a root identity switch. The owner confirmed seamless audio switching between a Linux laptop and the Fold8; phone-to-phone compatibility still requires hardware validation. See [root identity limits](docs/ROOT_BLUETOOTH_IDENTITY.md).
 
 This is an **early public release**. See [compatibility and setup notes](docs/COMPATIBILITY.md) for system integration, permissions, migration from debug builds and known limitations.
 
@@ -66,4 +66,4 @@ OpenPodsMax is an independent project, not affiliated with Apple or Google. AirP
 
 [Linux Quick Toggle integration](linux/README.md) puts headphone controls and
 native handoff inside an existing ii Quickshell sidebar, without a separate
-window. This investigation build is separate from the published Android release.
+window. The Linux backend is included in source; the release APK is Android-only.
