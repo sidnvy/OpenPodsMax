@@ -22,10 +22,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <service android:name=".PlaybackAccessService" android:label="AirPods playback resume"
-                 android:exported="true" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
-            <intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter>
-        </service>
         <!-- Bluetooth ACL broadcasts come from the privileged Bluetooth UID, not system UID. -->
         <receiver android:name=".PlaybackRecoveryReceiver" android:exported="true"
                   android:permission="android.permission.BLUETOOTH_PRIVILEGED">

@@ -143,14 +143,14 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
     var showAllBonds by remember { mutableStateOf(false) }
     val pairingDiscovery = remember { PairingDiscovery(context) }
     var pauseWhenRemoved by remember { mutableStateOf(prefs.getBoolean(WearPauseService.PREF, false)) }
-    var resumeWhenWorn by remember { mutableStateOf(prefs.getBoolean(WearResumeController.PREF, false)) }
+    var resumeWhenWorn by remember { mutableStateOf(prefs.getBoolean(WearTransientFocus.PREF, false)) }
     var useSbc by remember(selected) { mutableStateOf(SbcCodecController.enabled(context, selected)) }
     var sbcStatus by remember(selected) { mutableStateOf(prefs.getString(SbcCodecController.statusKey(selected), "")) }
     DisposableEffect(prefs, selected) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key == AppleIdentityConfig.PREF) phoneIdentityEnabled = prefs.getBoolean(key, false)
             if (key == AppleIdentityConfig.STATUS) phoneIdentityStatus = prefs.getString(key, "").orEmpty()
-            if (key == WearResumeController.PREF) resumeWhenWorn = prefs.getBoolean(key, false)
+            if (key == WearTransientFocus.PREF) resumeWhenWorn = prefs.getBoolean(key, false)
             if (key == WearPauseService.PREF) pauseWhenRemoved = prefs.getBoolean(key, false)
             if (key == SbcCodecController.key(selected)) useSbc = prefs.getBoolean(key, false)
             if (key == SbcCodecController.statusKey(selected)) sbcStatus = prefs.getString(key, "")
@@ -158,7 +158,7 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
         prefs.registerOnSharedPreferenceChangeListener(listener)
         onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
-    LaunchedEffect(pauseWhenRemoved, useSbc, phoneIdentityEnabled, selected, permission, preview) {
+    LaunchedEffect(pauseWhenRemoved, resumeWhenWorn, useSbc, phoneIdentityEnabled, selected, permission, preview) {
         if (!preview && (pauseWhenRemoved || useSbc || phoneIdentityEnabled) && permission && DeviceIdentityStore.trustedAndBonded(context, selected)) {
             try { context.startForegroundService(Intent(context, WearPauseService::class.java)) }
             catch (e: RuntimeException) {
@@ -466,8 +466,7 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
                             onScreen = { page = it },
                             resumeWhenWorn = resumeWhenWorn,
                             onResumeWhenWorn = { enabled ->
-                                if (!enabled || WearResumeController.hasAccess(context)) prefs.edit().putBoolean(WearResumeController.PREF, enabled).apply()
-                                else context.startActivity(Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                                prefs.edit().putBoolean(WearTransientFocus.PREF, enabled).apply()
                             },
                             pauseWhenRemoved = pauseWhenRemoved,
                             onPauseWhenRemoved = { prefs.edit().putBoolean(WearPauseService.PREF, it).apply() },
@@ -616,7 +615,7 @@ private fun Overview(
             pauseWhenRemoved, !preview && d.connected && Build.VERSION.SDK_INT >= 33,
             onCheckedChange = onPauseWhenRemoved)
         Separator()
-        IosSwitchRow("Resume when worn", "Resumes the same player within 60 seconds. Requires notification access; enable this switch after granting access.",
+        IosSwitchRow("Resume when worn", "Uses temporary Android Audio Focus. The player resumes when supported; no notification access required.",
             resumeWhenWorn, !preview && pauseWhenRemoved, onCheckedChange = onResumeWhenWorn)
     }
     if (sbcStatus.isNotBlank()) Text(sbcStatus, fontSize = 12.sp, color = p.secondary,
