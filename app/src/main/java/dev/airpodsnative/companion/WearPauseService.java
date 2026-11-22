@@ -19,7 +19,8 @@ public final class WearPauseService extends Service {
     private static final int NOTIFICATION=5193;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final WearPausePolicy policy=new WearPausePolicy();
-    private WearResumeController resume;
+    private WearTransientFocus focus;
+    private final WearFocusPolicy focusPolicy=new WearFocusPolicy();
     private AapController controller;
     private AudioManager audio;
     private SbcCodecController sbc;
@@ -27,6 +28,7 @@ public final class WearPauseService extends Service {
     private long generation=-1;
     private boolean active;
     private final Runnable check=this::pauseIfDue;
+    private final Runnable focusCheck=this::releaseFocusIfWorn;
     private final AapController.WearListener wear=(address,token,primary,secondary)->{
         long received=SystemClock.elapsedRealtime();
         handler.post(()->{
@@ -39,7 +41,10 @@ public final class WearPauseService extends Service {
             if(generation!=token){reset();generation=token;}
             long now=SystemClock.elapsedRealtime();
             policy.observe(primary,secondary,now);
-            resume.wear(primary,secondary);
+            focusPolicy.observe(primary,secondary,now);
+            handler.removeCallbacks(focusCheck);
+            long focusDelay=focusPolicy.delay(SystemClock.elapsedRealtime());
+            if(focusDelay>=0)handler.postDelayed(focusCheck,focusDelay);
             handler.removeCallbacks(check);
             long delay=policy.delay(SystemClock.elapsedRealtime());
             Log.i(AapController.TAG,"WEAR_POLICY primary="+primary+" secondary="+secondary
@@ -55,20 +60,38 @@ public final class WearPauseService extends Service {
         if(active){reset();Log.i(AapController.TAG,"WEAR_RESUME_CLEARED_FOR_HANDOFF");}
     });
     private SharedPreferences prefs(){return getSharedPreferences("selected_airpods",MODE_PRIVATE);}
-    private void reset(){handler.removeCallbacks(check);handler.removeCallbacks(resumeCheck);policy.reset();if(resume!=null)resume.clear();generation=-1;}
-    private final Runnable resumeCheck=new Runnable(){public void run(){
-        try {
-            if(resume.tick(resumePendingSafe(),audio.isMusicActive()))Log.i(AapController.TAG,"WEAR_RESUME_REQUESTED");
-            if(resume.pending())handler.postDelayed(this,250);
-        }catch(RuntimeException ex){resume.clear();}
-    }};
-    private boolean resumePendingSafe(){return active && prefs().getBoolean(PREF,false) && prefs().getBoolean(WearResumeController.PREF,false)
-        && controller.isCurrentSession(target,generation) && DeviceIdentityStore.trustedAndBonded(this,target)
-        && mediaRouteMatches(audio,target) && audio.getMode()==AudioManager.MODE_NORMAL;}
+    private void reset(){
+        handler.removeCallbacks(check);handler.removeCallbacks(focusCheck);
+        policy.reset();focusPolicy.clear();
+        if(focus!=null)focus.abandon("session_reset");
+        generation=-1;
+    }
+    private boolean focusReleaseSafe(){
+        return active && prefs().getBoolean(PREF,false)
+            && prefs().getBoolean(WearTransientFocus.PREF,false)
+            && controller.isCurrentSession(target,generation)
+            && DeviceIdentityStore.trustedAndBonded(this,target)
+            && mediaRouteMatches(audio,target) && audio.getMode()==AudioManager.MODE_NORMAL;
+    }
+    private void releaseFocusIfWorn(){
+        long now=SystemClock.elapsedRealtime();
+        if(focusPolicy.consume(now)){
+            boolean safe=focusReleaseSafe();
+            Log.i(AapController.TAG,"WEAR_FOCUS_WORN_RELEASE safe="+safe);
+            // Release ownership even if no longer safe; never leave stale focus held.
+            if(focus!=null)focus.abandon(safe?"worn":"invalid_route");
+            return;
+        }
+        long delay=focusPolicy.delay(now);
+        if(delay>=0)handler.postDelayed(focusCheck,Math.max(1,delay));
+    }
     @Override public IBinder onBind(Intent intent){return null;}
     @Override public void onCreate(){
         super.onCreate();controller=AapController.instance();controller.initialize(this);
-        audio=getSystemService(AudioManager.class);resume=new WearResumeController(this);
+        audio=getSystemService(AudioManager.class);
+        focus=new WearTransientFocus(audio,handler,()->{
+            focusPolicy.clear();handler.removeCallbacks(focusCheck);
+        });
         getSystemService(NotificationManager.class).createNotificationChannel(
             new NotificationChannel(CHANNEL,"AirPods playback",NotificationManager.IMPORTANCE_LOW));
     }
@@ -146,13 +169,13 @@ public final class WearPauseService extends Service {
                     " normal="+normal+" playing="+playing);
                 return;
             }
-            resume.clear();
-            boolean targeted=false;
-            try {targeted=prefs().getBoolean(WearResumeController.PREF,false) && resume.pause();}
-            catch(RuntimeException ex){resume.clear();Log.w(AapController.TAG,"WEAR_RESUME_UNAVAILABLE="+ex.getClass().getSimpleName());}
-            if(targeted){
-                Log.i(AapController.TAG,"WEAR_PAUSE_SESSION_REQUESTED");
-                handler.removeCallbacks(resumeCheck);handler.postDelayed(resumeCheck,250);return;
+            if(prefs().getBoolean(WearTransientFocus.PREF,false)){
+                if(focus.acquire()){
+                    focusPolicy.acquired();
+                    Log.i(AapController.TAG,"WEAR_FOCUS_OWNED");
+                }else Log.w(AapController.TAG,"WEAR_FOCUS_NOT_GRANTED");
+                // Never fall back to a direct pause that can break playback lifecycle.
+                return;
             }
             long now=SystemClock.uptimeMillis();
             audio.dispatchMediaKeyEvent(new KeyEvent(now,now,KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_MEDIA_PAUSE,0));
@@ -162,7 +185,7 @@ public final class WearPauseService extends Service {
         }catch(RuntimeException ex){Log.w(AapController.TAG,"WEAR_PAUSE_FAILED="+ex.getClass().getSimpleName());}
     }
     @Override public void onDestroy(){
-        active=false;handler.removeCallbacksAndMessages(null);policy.reset();resume.clear();
+        active=false;handler.removeCallbacksAndMessages(null);policy.reset();focusPolicy.clear();focus.abandon("service_destroy");
         if(sbc!=null){sbc.close();sbc=null;}
         controller.removeWearListener(wear);controller.removeSessionListener(session);controller.removeHandoffListener(handoff);
         stopForeground(STOP_FOREGROUND_REMOVE);super.onDestroy();
