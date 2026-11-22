@@ -42,7 +42,16 @@ user-selected pause-only behavior remains.
   AudioTrack mutedState:none, no new AudioHardening record.
 - Existing JVM regressions and WearFocusPolicy tests pass.
 - Compile, Android lint and packaging verified for the modified app.
-- On-device wear cycle using the new release APK not yet accepted.
+- On-device 0.2.12 wear cycle PASS (2026-11-22 21:44:30–21:44:35):
+  WearFocus granted and released; real regular YouTube playback resumed audibly.
+- Manual pause PASS (21:54:02): removal observed; no focus acquired because playback
+  was inactive. Music remained paused after reinsertion.
+- A2DP reconnect PASS (21:54:37 disconnect; 21:55:01 reconnect); AAP recovered.
+  Post-reconnect cycle PASS (21:55:11 focus acquired; 21:55:15 released).
+- No AudioHardening background playback mute since installing 0.2.12.
+- GitHub Source checks on the candidate commit:
+  https://github.com/sidnvy/OpenPodsMax/actions/runs/45028805408
+
 
 ## Compatibility and safety limits
 

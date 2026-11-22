@@ -15,14 +15,14 @@ The ordinary configuration uses manual switching. Version 0.2.11 adds the existi
 
 ## Installing over an existing version
 
-Official 0.2.x installations can update directly to 0.2.11 with the same release signing key. Private/debug builds use a different certificate and require uninstalling first, resetting app data and permissions. See [release verification](RELEASING.md).
+Official 0.2.x installations can update directly to 0.2.12 with the same release signing key. Private/debug builds use a different certificate and require uninstalling first, resetting app data and permissions. See [release verification](RELEASING.md).
 
 ## Permissions and privacy
 
 | Permission or service | Purpose |
 | --- | --- |
 | Bluetooth access | Communicate with the selected, paired headset |
-| Notification access, optional | Locate media sessions for same-player resume; the implementation does not read or store notification contents |
+| Notification access | No longer needed for wear-based resume as of 0.2.12; previously granted access can be revoked in Android Settings |
 | Foreground service | Keep enabled playback features running in the background |
 | Bluetooth scanning and display over other apps, optional | Nearby pairing popup |
 | Android companion-device association, optional | Let this app control the selected headset's codec without a privileged grant; Android presents its own approval dialog |
@@ -30,6 +30,26 @@ Official 0.2.x installations can update directly to 0.2.11 with the same release
 | Root access, optional | Change and restore this phone's runtime Bluetooth Device ID after opt-in; Bluetooth restarts, affecting all Bluetooth devices |
 
 Microphone recording is not used. When reporting a problem, remove device addresses, personal names and notification content from logs or screenshots.
+
+## Android 17 wear-triggered playback
+
+Version 0.2.12 replaces the old cross-app MediaSession pause/play sequence with a temporary
+Android Audio Focus request whenever both **Pause when removed** and **Resume when worn**
+are enabled. This preserves the media application's foreground-service lifecycle and avoids
+an Android 17 Audio Hardening regression where playback appeared to continue but the
+audio track was muted. No notification-listener access is required for this flow.
+
+Confirmed on **Galaxy Z Fold8 / Android 17 with AirPods Max 2** on 2026-11-22:
+a real YouTube wear cycle resumed audibly; a manual pause stayed paused after removal
+and reinsertion; an A2DP disconnect/reconnect recovered and a subsequent wear cycle
+worked. A separate ordinary-app experiment confirmed YouTube Music can pause and resume
+after transient Audio Focus. Android's own hardening logs showed no new mute record
+during these tests.
+
+Other applications may stop or refuse to automatically resume when they lose Audio Focus,
+and video apps may enforce their own background-playback restrictions. This is
+not a guarantee of universal auto-resume. See [the incident and mechanism](ANDROID17_AUDIO_FOCUS.md)
+and [0.2.12 release notes](releases/0.2.12.md).
 
 ## Automatic SBC
 
