@@ -113,6 +113,14 @@ public final class AapController {
     private boolean hasAudioConnection(String address){
         return address!=null && audioConnections.contains(address.toUpperCase(java.util.Locale.ROOT));
     }
+    /**
+     * Public status only: the selected headset can be connected for Bluetooth audio
+     * even when the optional AirPods control channel (AAP) cannot be established.
+     * Never use this as a substitute for the AAP/session authorization checks.
+     */
+    public boolean isAudioConnected(String address){
+        return ConnectionPolicy.DeviceAddress.valid(address) && hasAudioConnection(address);
+    }
     private void checkAudioConnection(){
         Set<String> available=new java.util.HashSet<>();
         try {

@@ -73,7 +73,8 @@ class MainActivity : ComponentActivity() {
 private enum class Screen { OVERVIEW, ADAPTIVE, ACCESSIBILITY, ABOUT }
 private data class BondOption(val address: String, val label: String)
 private data class DeviceState(
-    val connected: Boolean, val battery: Int, val mode: Int,
+    val controlConnected: Boolean, val audioConnected: Boolean,
+    val battery: Int, val mode: Int,
     val settings: Map<Int, Int>, val name: String,
     val verifying: Set<Int> = emptySet()
 )
@@ -304,8 +305,8 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
         }
     }
     var page by remember { mutableStateOf(Screen.OVERVIEW) }
-    var observed by remember { mutableStateOf(DeviceState(false, -1, -1, emptyMap(), "AirPods Max 2")) }
-    val sample = DeviceState(true, 86, 0, mapOf(
+    var observed by remember { mutableStateOf(DeviceState(false, false, -1, -1, emptyMap(), "AirPods Max 2")) }
+    val sample = DeviceState(true, true, 86, 0, mapOf(
         AapController.PERSONALIZED_VOLUME to 1, AapController.CONVERSATION_AWARENESS to 1,
         AapController.EAR_DETECTION to 1, AapController.LISTENING_MODE_CYCLE to 14,
         AapController.PRESS_SPEED to 0, AapController.HOLD_DURATION to 0,
@@ -331,11 +332,12 @@ private fun AirPodsApp(preview: Boolean, pairingPreview: Boolean,
             // A setting write deliberately reconnects just the AAP control channel.
             // Keep the last *confirmed* values on screen for that bounded, audio-route-
             // verified transition. Do not misrepresent a real disconnect as temporary.
-            observed = if (observed.connected && controller.isSettingsReadbackRefreshing()) {
+            observed = if (observed.controlConnected && controller.isSettingsReadbackRefreshing()) {
                 observed.copy(verifying = verifying)
             } else {
                 DeviceState(
-                    controller.isConnected, controller.batteryPercent(), controller.lastObservedMode(),
+                    controller.isConnected, controller.isAudioConnected(selected),
+                    controller.batteryPercent(), controller.lastObservedMode(),
                     controller.snapshot(), bonds.firstOrNull { it.address == selected }?.label ?: "AirPods Max 2",
                     verifying
                 )
@@ -576,30 +578,35 @@ private fun Overview(
             painterResource(finish.drawable), contentDescription = "AirPods Max 2 in " + finish.label,
             modifier = Modifier.fillMaxWidth().height(230.dp), contentScale = ContentScale.Fit
         )
-        Text(if (d.battery in 0..100) "●  " + d.battery + "%" else "Battery not reported",
+        Text(if (d.battery in 0..100) "●  " + d.battery + "%"
+            else if (d.audioConnected) "Battery unavailable · AirPods controls offline"
+            else "Battery not reported",
             color = if (d.battery in 0..100) p.green else p.secondary,
             fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
     }
     Spacer(Modifier.height(17.dp))
     Group {
-        NavRow(d.name, if (d.connected) {
-            if (d.battery in 0..100) "Connected · " + d.battery + "% Battery" else "Connected · Battery unavailable"
-        } else "Disconnected") { onScreen(Screen.ABOUT) }
+        NavRow(d.name, when {
+            d.controlConnected && d.battery in 0..100 -> "Connected · " + d.battery + "% Battery"
+            d.controlConnected -> "Connected · Battery unavailable"
+            d.audioConnected -> "Connected for audio · AirPods controls unavailable"
+            else -> "Bluetooth disconnected"
+        }) { onScreen(Screen.ABOUT) }
     }
     SectionCaption("LISTENING MODE")
-    AppleListeningStrip(d.mode, enabled = d.connected, pendingMode = pending, onClickMode = onMode)
+    AppleListeningStrip(d.mode, enabled = d.controlConnected, pendingMode = pending, onClickMode = onMode)
     SectionCaption("AUDIO")
     Group {
         IosSwitchRow("Personalized Volume", "Automatically adjusts volume",
             asBool(d, AapController.PERSONALIZED_VOLUME),
-            d.connected && AapController.PERSONALIZED_VOLUME !in d.verifying,
+            d.controlConnected && AapController.PERSONALIZED_VOLUME !in d.verifying,
             pending = AapController.PERSONALIZED_VOLUME in d.verifying) {
             onBoolean(AapController.PERSONALIZED_VOLUME, it)
         }
         Separator()
         IosSwitchRow("Conversation Awareness", "Lowers media volume when you speak",
             asBool(d, AapController.CONVERSATION_AWARENESS),
-            d.connected && AapController.CONVERSATION_AWARENESS !in d.verifying,
+            d.controlConnected && AapController.CONVERSATION_AWARENESS !in d.verifying,
             pending = AapController.CONVERSATION_AWARENESS in d.verifying) {
             onBoolean(AapController.CONVERSATION_AWARENESS, it)
         }
@@ -612,7 +619,7 @@ private fun Overview(
             useSbc, !preview, onCheckedChange = onUseSbc)
         Separator()
         IosSwitchRow("Pause when removed", "Pauses music on this phone.",
-            pauseWhenRemoved, !preview && d.connected && Build.VERSION.SDK_INT >= 33,
+            pauseWhenRemoved, !preview && d.controlConnected && Build.VERSION.SDK_INT >= 33,
             onCheckedChange = onPauseWhenRemoved)
         Separator()
         IosSwitchRow("Resume when worn", "Uses temporary Android Audio Focus. The player resumes when supported; no notification access required.",
@@ -626,7 +633,7 @@ private fun Overview(
         Separator()
         IosSwitchRow("Automatic Head Detection", "Headset sensor setting · Android pause is controlled above",
             asBool(d, AapController.EAR_DETECTION),
-            d.connected && AapController.EAR_DETECTION !in d.verifying,
+            d.controlConnected && AapController.EAR_DETECTION !in d.verifying,
             pending = AapController.EAR_DETECTION in d.verifying) {
             onBoolean(AapController.EAR_DETECTION, it)
         }
@@ -644,7 +651,7 @@ private fun Overview(
     val p = LocalApplePalette.current
     val raw = d.settings[AapController.ADAPTIVE_NOISE]
     val verifying = AapController.ADAPTIVE_NOISE in d.verifying
-    var draft by remember(raw, verifying, d.connected) {
+    var draft by remember(raw, verifying, d.controlConnected) {
         mutableFloatStateOf(if (raw != null) (100 - raw).toFloat() else 50f)
     }
     SectionCaption("CUSTOMIZE ADAPTIVE AUDIO")
@@ -654,7 +661,7 @@ private fun Overview(
         Image(painterResource(R.drawable.speaker_quiet), contentDescription = null, modifier = Modifier.size(25.dp))
         Slider(
             value = draft, onValueChange = { draft = it }, valueRange = 0f..100f,
-            enabled = d.connected && d.mode == 2 && raw != null && !preview && !verifying,
+            enabled = d.controlConnected && d.mode == 2 && raw != null && !preview && !verifying,
             onValueChangeFinished = {
                 onAdjust(draft.toInt())
                 draft = if (raw != null) (100 - raw).toFloat() else 50f
@@ -698,7 +705,7 @@ private fun Overview(
         val observed = d.settings[id]
         Group {
             labels.forEachIndexed { index, name ->
-                ChoiceRow(name, observed == index, d.connected && !preview && observed != null &&
+                ChoiceRow(name, observed == index, d.controlConnected && !preview && observed != null &&
                     id !in d.verifying) {
                     onChoice(id, index)
                 }
@@ -720,7 +727,7 @@ private fun Overview(
             }
             Slider(value = toneDraft, onValueChange = { toneDraft = it },
                 valueRange = 15f..100f,
-                enabled = d.connected && !preview && tone != null &&
+                enabled = d.controlConnected && !preview && tone != null &&
                     AapController.CHIME_VOLUME !in d.verifying,
                 onValueChangeFinished = { onTone(toneDraft.toInt()) },
                 colors = SliderDefaults.colors(activeTrackColor = LocalApplePalette.current.tint))
@@ -729,7 +736,7 @@ private fun Overview(
     SectionCaption("HEADPHONE BEHAVIOR")
     Group {
         IosSwitchRow("Automatic Head Detection", "Automatically pause when removed",
-            asBool(d, AapController.EAR_DETECTION), d.connected && !preview,
+            asBool(d, AapController.EAR_DETECTION), d.controlConnected && !preview,
             onCheckedChange = onHeadDetection)
     }
 }

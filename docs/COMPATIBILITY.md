@@ -7,6 +7,44 @@ Hardware acceptance testing used **AirPods Max 2**, **Pixel 10 Pro XL** and **Mo
 - Deep Doze, long-duration reliability, arbitrary media players and calls are not comprehensively tested.
 - System Settings registration can be overwritten by Bluetooth cycles or system updates. Installing the app alone does not enable it, and an ordinary APK cannot restore it automatically. Battery in Android's connected-device list is not implemented.
 
+## Bluetooth audio versus AirPods control connectivity
+
+OpenPodsMax has two distinct connection states:
+
+- **Bluetooth audio**: Android reports the selected, approved bonded AirPods as
+  an A2DP/BLE headset output. Audio can play normally.
+- **AAP control**: the app has additionally established the Apple protocol over
+  Classic Bluetooth L2CAP PSM 0x1001. Battery readback, noise controls, and
+  ear-removal automation depend on this channel.
+
+Some ROMs allow audio but cannot establish the L2CAP channel. As of the
+unreleased next UI improvement, the app displays **Connected for audio ·
+AirPods controls unavailable** instead of incorrectly calling such a headset
+disconnected. This is a status clarification; it does not enable unsupported
+controls.
+
+**Observed on Lenovo Legion Y700 TB320FC**, ZUI 17.0.350, Android 15
+(API 35), 2025-03-05 security patch, tested 2026-11-22:
+
+- Official OpenPodsMax 0.2.12 found the approved AirPods Max 2 bond.
+- Android A2DP was connected, playing, and reported the exact bonded MAC
+  as an output and the active media route. A separate target-SDK-36
+  diagnostic app verified this through public Android audio APIs.
+- OpenPodsMax's L2CAP PSM 4097 connection remained CONNECTING without
+  reaching SOCKET_CONNECTED. An independent **secure** L2CAP socket attempt
+  also failed after the stack rejected the channel modes.
+- The Bluetooth stack emitted:
+  l2c_fcr_chk_chan_modes: L2CAP - Peer does not support our desired channel types.
+- This matches the documented upstream compatibility failure reported by
+  [CAPod #215](https://github.com/d4rken-org/capod/issues/215) and
+  [CAPod ROM compatibility tracker #538](https://github.com/d4rken-org/capod/issues/538).
+  A vendor Bluetooth-stack update that includes the relevant upstream
+  transport fix is the likely functional remedy, but a fix on this exact
+  Lenovo firmware has **not** been validated.
+
+Do not change system Bluetooth flags, disable OEM components, or patch vendor
+libraries on the assumption that a status-display change fixes AAP.
+
 ## System Settings integration
 
 The native device-details screenshot shows the result after experimental ADB metadata registration. Installing the APK alone does not enable this integration. Bluetooth cycles or system updates can overwrite the entry, and the ordinary APK cannot repair it automatically. The included [bootstrap helper](../scripts/bootstrap_settings_for_bond.sh) is restricted to Moto Edge 70 on API 37; it is development tooling, not a universal installer. Review its target checks and snapshot/rollback behavior before use. The artwork registration helper cannot exactly restore an original null value.
